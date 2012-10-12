@@ -449,11 +449,21 @@ pppInit(void)
 
   subnetMask = PP_HTONL(0xffffff00UL);
 
-  for (i = 0; i < NUM_PPP; i++) {
-    /* Initialize each protocol to the standard option set. */
-    for (j = 0; (protp = ppp_protocols[j]) != NULL; ++j) {
-      (*protp->init)(i);
-    }
+  /* default configuration */
+  pcb->settings.usepeerdns = 1;
+#if CHAP_SUPPORT
+  pcb->settings.chap_timeout_time = 3;
+  pcb->settings.chap_max_transmits = 10;
+#endif /* CHAP_SUPPPORT */
+  pcb->settings.lcp_loopbackfail = DEFLOOPBACKFAIL;
+  pcb->settings.lcp_echo_interval = LCP_ECHOINTERVAL;
+  pcb->settings.lcp_echo_fails = LCP_MAXECHOFAILS;
+
+  if (!netif_add(&pcb->netif, &pcb->addrs.our_ipaddr, &pcb->addrs.netmask,
+                 &pcb->addrs.his_ipaddr, (void *)pcb, ppp_netif_init_cb, NULL)) {
+    memp_free(MEMP_PPP_PCB, pcb);
+    PPPDEBUG(LOG_ERR, ("ppp_new[%d]: netif_add failed\n", pcb->num));
+    return NULL;
   }
 }
 
