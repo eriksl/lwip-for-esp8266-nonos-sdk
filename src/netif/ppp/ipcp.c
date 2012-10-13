@@ -97,6 +97,23 @@ static void ipcp_script (fsm *, char *); /* Run an up/down script */
 #endif
 static void ipcp_finished (fsm *);                    /* Don't need lower layer */
 
+static const fsm_callbacks ipcp_callbacks = { /* IPCP callback routines */
+    ipcp_resetci,		/* Reset our Configuration Information */
+    ipcp_cilen,			/* Length of our Configuration Information */
+    ipcp_addci,			/* Add our Configuration Information */
+    ipcp_ackci,			/* ACK our Configuration Information */
+    ipcp_nakci,			/* NAK our Configuration Information */
+    ipcp_rejci,			/* Reject our Configuration Information */
+    ipcp_reqci,			/* Request peer's Configuration Information */
+    ipcp_up,			/* Called when fsm reaches OPENED state */
+    ipcp_down,			/* Called when fsm leaves OPENED state */
+    NULL,			/* Called when we want the lower layer up */
+    ipcp_finished,		/* Called when we want the lower layer down */
+    NULL,			/* Called when Protocol-Reject received */
+    NULL,			/* Retransmission is necessary */
+    NULL,			/* Called to handle protocol-specific codes */
+    "IPCP"			/* String name of protocol */
+};
 
 fsm ipcp_fsm[NUM_PPP]; /* IPCP fsm structure */
 

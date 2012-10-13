@@ -130,30 +130,30 @@ static void lcp_rprotrej (fsm*, u_char*, int);
  * routines to send LCP echos to peer
  */
 
-static void lcp_echo_lowerup (int);
-static void lcp_echo_lowerdown (int);
-static void LcpEchoTimeout (void*);
-static void lcp_received_echo_reply (fsm*, int, u_char*, int);
-static void LcpSendEchoRequest (fsm*);
-static void LcpLinkFailure (fsm*);
-static void LcpEchoCheck (fsm*);
+static void lcp_echo_lowerup(ppp_pcb *pcb);
+static void lcp_echo_lowerdown(ppp_pcb *pcb);
+static void LcpEchoTimeout(void *arg);
+static void lcp_received_echo_reply(fsm *f, int id, u_char *inp, int len);
+static void LcpSendEchoRequest(fsm *f);
+static void LcpLinkFailure(fsm *f);
+static void LcpEchoCheck(fsm *f);
 
-static fsm_callbacks lcp_callbacks = { /* LCP callback routines */
-  lcp_resetci,  /* Reset our Configuration Information */
-  lcp_cilen,    /* Length of our Configuration Information */
-  lcp_addci,    /* Add our Configuration Information */
-  lcp_ackci,    /* ACK our Configuration Information */
-  lcp_nakci,    /* NAK our Configuration Information */
-  lcp_rejci,    /* Reject our Configuration Information */
-  lcp_reqci,    /* Request peer's Configuration Information */
-  lcp_up,       /* Called when fsm reaches LS_OPENED state */
-  lcp_down,     /* Called when fsm leaves LS_OPENED state */
-  lcp_starting, /* Called when we want the lower layer up */
-  lcp_finished, /* Called when we want the lower layer down */
-  NULL,         /* Called when Protocol-Reject received */
-  NULL,         /* Retransmission is necessary */
-  lcp_extcode,  /* Called to handle LCP-specific codes */
-  "LCP"         /* String name of protocol */
+static const fsm_callbacks lcp_callbacks = {	/* LCP callback routines */
+    lcp_resetci,		/* Reset our Configuration Information */
+    lcp_cilen,			/* Length of our Configuration Information */
+    lcp_addci,			/* Add our Configuration Information */
+    lcp_ackci,			/* ACK our Configuration Information */
+    lcp_nakci,			/* NAK our Configuration Information */
+    lcp_rejci,			/* Reject our Configuration Information */
+    lcp_reqci,			/* Request peer's Configuration Information */
+    lcp_up,			/* Called when fsm reaches OPENED state */
+    lcp_down,			/* Called when fsm leaves OPENED state */
+    lcp_starting,		/* Called when we want the lower layer up */
+    lcp_finished,		/* Called when we want the lower layer down */
+    NULL,			/* Called when Protocol-Reject received */
+    NULL,			/* Retransmission is necessary */
+    lcp_extcode,		/* Called to handle LCP-specific codes */
+    "LCP"			/* String name of protocol */
 };
 
 /*
