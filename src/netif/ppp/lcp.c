@@ -164,7 +164,7 @@ static fsm_callbacks lcp_callbacks = { /* LCP callback routines */
 static void lcp_input (int, u_char *, int);
 static void lcp_protrej (int);
 
-struct protent lcp_protent = {
+const struct protent lcp_protent = {
     PPP_LCP,
     lcp_init,
     lcp_input,
@@ -442,38 +442,28 @@ lcp_extcode(fsm *f, int code, u_char id, u_char *inp, int len)
  *
  * Figure out which protocol is rejected and inform it.
  */
-static void
-lcp_rprotrej(fsm *f, u_char *inp, int len)
-{
-  int i;
-  struct protent *protp;
-  u_short prot;
+static void lcp_rprotrej(fsm *f, u_char *inp, int len) {
+    int i;
+    const struct protent *protp;
+    u_short prot;
+#if PPP_PROTOCOLNAME
+    const char *pname;
+#endif /* PPP_PROTOCOLNAME */
 
-  if (len < (int)sizeof (u_short)) {
-    LCPDEBUG(LOG_INFO, ("lcp_rprotrej: Rcvd short Protocol-Reject packet!\n"));
-    return;
-  }
+    if (len < 2) {
+	LCPDEBUG(("lcp_rprotrej: Rcvd short Protocol-Reject packet!"));
+	return;
+    }
 
-  GETSHORT(prot, inp);
+    GETSHORT(prot, inp);
 
-  LCPDEBUG(LOG_INFO, ("lcp_rprotrej: Rcvd Protocol-Reject packet for %x!\n", prot));
-
-  /*
-   * Protocol-Reject packets received in any state other than the LCP
-   * LS_OPENED state SHOULD be silently discarded.
-   */
-  if( f->state != LS_OPENED ) {
-    LCPDEBUG(LOG_INFO, ("Protocol-Reject discarded: LCP in state %d\n", f->state));
-    return;
-  }
-
-  /*
-   * Upcall the proper Protocol-Reject routine.
-   */
-  for (i = 0; (protp = ppp_protocols[i]) != NULL; ++i) {
-    if (protp->protocol == prot && protp->enabled_flag) {
-      (*protp->protrej)(f->unit);
-      return;
+    /*
+     * Protocol-Reject packets received in any state other than the LCP
+     * OPENED state SHOULD be silently discarded.
+     */
+    if( f->state != PPP_FSM_OPENED ){
+	LCPDEBUG(("Protocol-Reject discarded: LCP in state %d", f->state));
+	return;
     }
   }
 

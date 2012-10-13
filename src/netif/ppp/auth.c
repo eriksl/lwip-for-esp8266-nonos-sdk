@@ -425,9 +425,15 @@ link_down(int unit)
     if (protp->protocol < 0xC000 && protp->close != NULL) {
       (*protp->close)(unit, "LCP down");
     }
-  }
-  num_np_open = 0;  /* number of network protocols we have opened */
-  num_np_up = 0;    /* Number of network protocols which have come up */
+    /* XXX if doing_multilink, should do something to stop
+       network-layer traffic on the link */
+
+    ppp_link_down(pcb);
+}
+
+void upper_layers_down(ppp_pcb *pcb) {
+    int i;
+    const struct protent *protp;
 
   if (lcp_phase[unit] != PHASE_DEAD) {
     lcp_phase[unit] = PHASE_TERMINATE;
@@ -447,7 +453,7 @@ void link_established(ppp_pcb *pcb) {
 #endif /* PPP_SERVER */
     lcp_options *ho = &pcb->lcp_hisoptions;
     int i;
-    struct protent *protp;
+    const struct protent *protp;
 #if PPP_SERVER
     int errcode;
 #endif /* PPP_SERVER */
@@ -578,25 +584,115 @@ network_phase(int unit)
   }
 
 #if CBCP_SUPPORT
-  /*
-   * If we negotiated callback, do it now.
-   */
-  if (go->neg_cbcp) {
-    lcp_phase[unit] = PHASE_CALLBACK;
-    (*cbcp_protent.open)(unit);
-    return;
-  }
-#endif /* CBCP_SUPPORT */
-
-  lcp_phase[unit] = PHASE_NETWORK;
-  for (i = 0; (protp = ppp_protocols[i]) != NULL; ++i) {
-    if (protp->protocol < 0xC000 && protp->enabled_flag && protp->open != NULL) {
-      (*protp->open)(unit);
-      if (protp->protocol != PPP_CCP) {
-        ++num_np_open;
-      }
+    /*
+     * If we negotiated callback, do it now.
+     */
+    if (go->neg_cbcp) {
+	new_phase(pcb, PHASE_CALLBACK);
+	(*cbcp_protent.open)(pcb);
+	return;
     }
-  }
+#endif
+
+#if PPP_OPTIONS
+    /*
+     * Process extra options from the secrets file
+     */
+    if (extra_options) {
+	options_from_list(extra_options, 1);
+	free_wordlist(extra_options);
+	extra_options = 0;
+    }
+#endif /* PPP_OPTIONS */
+    start_networks(pcb);
+}
+
+void start_networks(ppp_pcb *pcb) {
+#if CCP_SUPPORT || ECP_SUPPORT
+    int i;
+    const struct protent *protp;
+#endif /* CCP_SUPPORT || ECP_SUPPORT */
+#if ECP_SUPPORT
+    int ecp_required;
+#endif /* ECP_SUPPORT */
+#ifdef MPPE
+    int mppe_required;
+#endif /* MPPE */
+
+    new_phase(pcb, PHASE_NETWORK);
+
+#ifdef HAVE_MULTILINK
+    if (multilink) {
+	if (mp_join_bundle()) {
+	    if (multilink_join_hook)
+		(*multilink_join_hook)();
+	    if (updetach && !nodetach)
+		detach();
+	    return;
+	}
+    }
+#endif /* HAVE_MULTILINK */
+
+#ifdef PPP_FILTER
+    if (!demand)
+	set_filters(&pass_filter, &active_filter);
+#endif
+#if CCP_SUPPORT || ECP_SUPPORT
+    /* Start CCP and ECP */
+    for (i = 0; (protp = protocols[i]) != NULL; ++i)
+	if (
+	    (0
+#if ECP_SUPPORT
+	    || protp->protocol == PPP_ECP
+#endif /* ECP_SUPPORT */
+#if CCP_SUPPORT
+	    || protp->protocol == PPP_CCP
+#endif /* CCP_SUPPORT */
+	    )
+	    && protp->enabled_flag && protp->open != NULL)
+	    (*protp->open)(pcb);
+#endif /* CCP_SUPPORT || ECP_SUPPORT */
+
+    /*
+     * Bring up other network protocols iff encryption is not required.
+     */
+#if ECP_SUPPORT
+    ecp_required = ecp_gotoptions[unit].required;
+#endif /* ECP_SUPPORT */
+#ifdef MPPE
+    mppe_required = ccp_gotoptions[unit].mppe;
+#endif /* MPPE */
+
+    if (1
+#if ECP_SUPPORT
+        && !ecp_required
+#endif /* ECP_SUPPORT */
+#ifdef MPPE
+        && !mppe_required
+#endif /* MPPE */
+        )
+	continue_networks(pcb);
+}
+
+void continue_networks(ppp_pcb *pcb) {
+    int i;
+    const struct protent *protp;
+
+    /*
+     * Start the "real" network protocols.
+     */
+    for (i = 0; (protp = protocols[i]) != NULL; ++i)
+	if (protp->protocol < 0xC000
+#if CCP_SUPPORT
+	    && protp->protocol != PPP_CCP
+#endif /* CCP_SUPPORT */
+#if ECP_SUPPORT
+	    && protp->protocol != PPP_ECP
+#endif /* ECP_SUPPORT */
+	    && protp->enabled_flag && protp->open != NULL) {
+	    (*protp->open)(pcb);
+	    ++pcb->num_np_open;
+	}
 
   if (num_np_open == 0) {
     /* nothing to do */

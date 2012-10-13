@@ -259,8 +259,8 @@ static PPPControl pppControl[NUM_PPP]; /* The PPP interface control blocks. */
  * One entry per supported protocol.
  * The last entry must be NULL.
  */
-struct protent *ppp_protocols[] = {
-  &lcp_protent,
+const struct protent* const protocols[] = {
+    &lcp_protent,
 #if PAP_SUPPORT
   &pap_protent,
 #endif /* PAP_SUPPORT */
@@ -898,10 +898,10 @@ pppifOutput(struct netif *netif, struct pbuf *pb, ip_addr_t *ipaddr)
 
   tailMB = headMB;
 
-  /* Build the PPP header. */
-  if ((sys_jiffies() - pc->lastXMit) >= PPP_MAXIDLEFLAG) {
-    tailMB = pppAppend(PPP_FLAG, tailMB, NULL);
-  }
+/* Set a PPP PCB to its initial state */
+static void ppp_clear(ppp_pcb *pcb) {
+  const struct protent *protp;
+  int i;
 
   pc->lastXMit = sys_jiffies();
   if (!pc->accomp) {
@@ -1061,10 +1061,94 @@ pppWriteOverEthernet(int pd, const u_char *s, int n)
 
   MEMCPY(pb->payload, s, n);
 
-  if(pppoe_xmit(pc->pppoe_sc, pb) != ERR_OK) {
-    LINK_STATS_INC(link.err);
-    snmp_inc_ifoutdiscards(&pc->netif);
-    return PPPERR_DEVICE;
+#if VJ_SUPPORT
+    case PPP_VJC_COMP:      /* VJ compressed TCP */
+      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: vj_comp in pbuf len=%d\n", pcb->num, pb->len));
+      /*
+       * Clip off the VJ header and prepend the rebuilt TCP/IP header and
+       * pass the result to IP.
+       */
+      if ((vj_uncompress_tcp(&pb, &pcb->vj_comp) >= 0) && (pcb->netif.input)) {
+        pcb->netif.input(pb, &pcb->netif);
+        return;
+      }
+      /* Something's wrong so drop it. */
+      PPPDEBUG(LOG_WARNING, ("ppp_input[%d]: Dropping VJ compressed\n", pcb->num));
+      break;
+
+    case PPP_VJC_UNCOMP:    /* VJ uncompressed TCP */
+      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: vj_un in pbuf len=%d\n", pcb->num, pb->len));
+      /*
+       * Process the TCP/IP header for VJ header compression and then pass
+       * the packet to IP.
+       */
+      if ((vj_uncompress_uncomp(pb, &pcb->vj_comp) >= 0) && pcb->netif.input) {
+        pcb->netif.input(pb, &pcb->netif);
+        return;
+      }
+      /* Something's wrong so drop it. */
+      PPPDEBUG(LOG_WARNING, ("ppp_input[%d]: Dropping VJ uncompressed\n", pcb->num));
+      break;
+#endif /* VJ_SUPPORT */
+
+    case PPP_IP:            /* Internet Protocol */
+      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: ip in pbuf len=%d\n", pcb->num, pb->len));
+      ip_input(pb, &pcb->netif);
+      return;
+
+#if PPP_IPV6_SUPPORT
+    case PPP_IPV6:          /* Internet Protocol Version 6 */
+      PPPDEBUG(LOG_INFO, ("ppp_input[%d]: ip6 in pbuf len=%d\n", pcb->num, pb->len));
+      ip6_input(pb, &pcb->netif);
+      return;
+#endif /* PPP_IPV6_SUPPORT */
+
+    default: {
+
+      int i;
+      const struct protent *protp;
+      /*
+       * Upcall the proper protocol input routine.
+       */
+      for (i = 0; (protp = protocols[i]) != NULL; ++i) {
+        if (protp->protocol == protocol && protp->enabled_flag) {
+          pb = ppp_singlebuf(pb);
+          (*protp->input)(pcb, pb->payload, pb->len);
+          goto out;
+        }
+#if 0 /* UNUSED
+       *
+       * This is actually a (hacked?) way for the PPP kernel implementation to pass a
+       * data packet to the PPP daemon. The PPP daemon normally only do signaling
+       * (LCP, PAP, CHAP, IPCP, ...) and does not handle any data packet at all.
+       *
+       * This is only used by CCP, which we cannot support until we have a CCP data
+       * implementation.
+       */
+      if (protocol == (protp->protocol & ~0x8000) && protp->enabled_flag
+        && protp->datainput != NULL) {
+        (*protp->datainput)(pcb, pb->payload, pb->len);
+        goto out;
+      }
+#endif /* UNUSED */
+    }
+
+#if PPP_DEBUG
+#if PPP_PROTOCOLNAME
+    const char *pname = protocol_name(protocol);
+    if (pname != NULL) {
+      ppp_warn("Unsupported protocol '%s' (0x%x) received", pname, protocol);
+    } else
+#endif /* PPP_PROTOCOLNAME */
+      ppp_warn("Unsupported protocol 0x%x received", protocol);
+#endif /* PPP_DEBUG */
+      if (pbuf_header(pb, (s16_t)sizeof(protocol))) {
+        LWIP_ASSERT("pbuf_header failed\n", 0);
+        goto drop;
+      }
+      lcp_sprotrej(pcb, pb->payload, pb->len);
+    }
+    break;
   }
 
   snmp_add_ifoutoctets(&pc->netif, (u16_t)n);
