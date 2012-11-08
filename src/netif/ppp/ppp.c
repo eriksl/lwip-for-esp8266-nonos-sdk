@@ -1352,6 +1352,250 @@ get_idle_time(int u, struct ppp_idle *ip)
   return 0;
 }
 
+#if PPPOS_SUPPORT
+static err_t ppp_netif_output_over_serial(ppp_pcb *pcb, struct pbuf *pb, u_short protocol) {
+  u_int fcs_out = PPP_INITFCS;
+  struct pbuf *head = NULL, *tail = NULL, *p;
+  u_char c;
+
+  /* Grab an output buffer. */
+  head = pbuf_alloc(PBUF_RAW, 0, PBUF_POOL);
+  if (head == NULL) {
+    PPPDEBUG(LOG_WARNING, ("ppp_netif_output[%d]: first alloc fail\n", pcb->num));
+    LINK_STATS_INC(link.memerr);
+    LINK_STATS_INC(link.drop);
+    snmp_inc_ifoutdiscards(&pcb->netif);
+    return ERR_MEM;
+  }
+
+#if VJ_SUPPORT
+  /*
+   * Attempt Van Jacobson header compression if VJ is configured and
+   * this is an IP packet.
+   */
+  if (protocol == PPP_IP && pcb->vj_enabled) {
+    switch (vj_compress_tcp(&pcb->vj_comp, pb)) {
+      case TYPE_IP:
+        /* No change...
+           protocol = PPP_IP_PROTOCOL; */
+        break;
+      case TYPE_COMPRESSED_TCP:
+        protocol = PPP_VJC_COMP;
+        break;
+      case TYPE_UNCOMPRESSED_TCP:
+        protocol = PPP_VJC_UNCOMP;
+        break;
+      default:
+        PPPDEBUG(LOG_WARNING, ("ppp_netif_output[%d]: bad IP packet\n", pcb->num));
+        LINK_STATS_INC(link.proterr);
+        LINK_STATS_INC(link.drop);
+        snmp_inc_ifoutdiscards(&pcb->netif);
+        pbuf_free(head);
+        return ERR_VAL;
+    }
+  }
+#endif /* VJ_SUPPORT */
+
+  tail = head;
+
+  /* Build the PPP header. */
+  if ((sys_jiffies() - pcb->last_xmit) >= PPP_MAXIDLEFLAG) {
+    tail = ppp_append(PPP_FLAG, tail, NULL);
+  }
+
+  pcb->last_xmit = sys_jiffies();
+  if (!pcb->accomp) {
+    fcs_out = PPP_FCS(fcs_out, PPP_ALLSTATIONS);
+    tail = ppp_append(PPP_ALLSTATIONS, tail, &pcb->out_accm);
+    fcs_out = PPP_FCS(fcs_out, PPP_UI);
+    tail = ppp_append(PPP_UI, tail, &pcb->out_accm);
+  }
+  if (!pcb->pcomp || protocol > 0xFF) {
+    c = (protocol >> 8) & 0xFF;
+    fcs_out = PPP_FCS(fcs_out, c);
+    tail = ppp_append(c, tail, &pcb->out_accm);
+  }
+  c = protocol & 0xFF;
+  fcs_out = PPP_FCS(fcs_out, c);
+  tail = ppp_append(c, tail, &pcb->out_accm);
+
+  /* Load packet. */
+  for(p = pb; p; p = p->next) {
+    int n;
+    u_char *sPtr;
+
+    sPtr = (u_char*)p->payload;
+    n = p->len;
+    while (n-- > 0) {
+      c = *sPtr++;
+
+      /* Update FCS before checking for special characters. */
+      fcs_out = PPP_FCS(fcs_out, c);
+
+      /* Copy to output buffer escaping special characters. */
+      tail = ppp_append(c, tail, &pcb->out_accm);
+    }
+  }
+
+  /* Add FCS and trailing flag. */
+  c = ~fcs_out & 0xFF;
+  tail = ppp_append(c, tail, &pcb->out_accm);
+  c = (~fcs_out >> 8) & 0xFF;
+  tail = ppp_append(c, tail, &pcb->out_accm);
+  tail = ppp_append(PPP_FLAG, tail, NULL);
+
+  /* If we failed to complete the packet, throw it away. */
+  if (!tail) {
+    PPPDEBUG(LOG_WARNING,
+             ("ppp_netif_output[%d]: Alloc err - dropping proto=%d\n",
+              pcb->num, protocol));
+    pbuf_free(head);
+    LINK_STATS_INC(link.memerr);
+    LINK_STATS_INC(link.drop);
+    snmp_inc_ifoutdiscards(&pcb->netif);
+    return ERR_MEM;
+  }
+
+  /* Send it. */
+  PPPDEBUG(LOG_INFO, ("ppp_netif_output[%d]: proto=0x%"X16_F"\n", pcb->num, protocol));
+
+  pppos_put(pcb, head);
+  return ERR_OK;
+}
+#endif /* PPPOS_SUPPORT */
+
+#if PPPOE_SUPPORT
+static err_t ppp_netif_output_over_ethernet(ppp_pcb *pcb, struct pbuf *p, u_short protocol) {
+  struct pbuf *pb;
+  int i=0;
+  u16_t tot_len;
+
+  /* @todo: try to use pbuf_header() here! */
+  pb = pbuf_alloc(PBUF_LINK, PPPOE_HEADERLEN + sizeof(protocol), PBUF_RAM);
+  if(!pb) {
+    LINK_STATS_INC(link.memerr);
+    LINK_STATS_INC(link.proterr);
+    snmp_inc_ifoutdiscards(&pcb->netif);
+    return ERR_MEM;
+  }
+
+  pbuf_header(pb, -(s16_t)PPPOE_HEADERLEN);
+
+  pcb->last_xmit = sys_jiffies();
+
+  if (!pcb->pcomp || protocol > 0xFF) {
+    *((u_char*)pb->payload + i++) = (protocol >> 8) & 0xFF;
+  }
+  *((u_char*)pb->payload + i) = protocol & 0xFF;
+
+  pbuf_chain(pb, p);
+  tot_len = pb->tot_len;
+
+  if(pppoe_xmit(pcb->pppoe_sc, pb) != ERR_OK) {
+    LINK_STATS_INC(link.err);
+    snmp_inc_ifoutdiscards(&pcb->netif);
+    return PPPERR_DEVICE;
+  }
+
+  snmp_add_ifoutoctets(&pcb->netif, tot_len);
+  snmp_inc_ifoutucastpkts(&pcb->netif);
+  LINK_STATS_INC(link.xmit);
+  return ERR_OK;
+}
+#endif /* PPPOE_SUPPORT */
+
+
+#if PPPOL2TP_SUPPORT
+static err_t ppp_netif_output_over_l2tp(ppp_pcb *pcb, struct pbuf *p, u_short protocol) {
+  struct pbuf *pb;
+  int i=0;
+  u16_t tot_len;
+
+  /* @todo: try to use pbuf_header() here! */
+  pb = pbuf_alloc(PBUF_TRANSPORT, PPPOL2TP_OUTPUT_DATA_HEADER_LEN + sizeof(protocol), PBUF_RAM);
+  if(!pb) {
+    LINK_STATS_INC(link.memerr);
+    LINK_STATS_INC(link.proterr);
+    snmp_inc_ifoutdiscards(&pcb->netif);
+    return ERR_MEM;
+  }
+
+  pbuf_header(pb, -(s16_t)PPPOL2TP_OUTPUT_DATA_HEADER_LEN);
+
+  pcb->last_xmit = sys_jiffies();
+
+  if (!pcb->pcomp || protocol > 0xFF) {
+    *((u_char*)pb->payload + i++) = (protocol >> 8) & 0xFF;
+  }
+  *((u_char*)pb->payload + i) = protocol & 0xFF;
+
+  pbuf_chain(pb, p);
+  tot_len = pb->tot_len;
+
+  if(pppol2tp_xmit(pcb->l2tp_pcb, pb) != ERR_OK) {
+    LINK_STATS_INC(link.err);
+    snmp_inc_ifoutdiscards(&pcb->netif);
+    return PPPERR_DEVICE;
+  }
+
+  snmp_add_ifoutoctets(&pcb->netif, tot_len);
+  snmp_inc_ifoutucastpkts(&pcb->netif);
+  LINK_STATS_INC(link.xmit);
+  return ERR_OK;
+}
+#endif /* PPPOL2TP_SUPPORT */
+
+
+/* Get and set parameters for the given connection.
+ * Return 0 on success, an error code on failure. */
+int
+ppp_ioctl(ppp_pcb *pcb, int cmd, void *arg)
+{
+  if(NULL == pcb)
+    return PPPERR_PARAM;
+
+  switch(cmd) {
+    case PPPCTLG_UPSTATUS:      /* Get the PPP up status. */
+      if (arg) {
+        *(int *)arg = (int)(pcb->if_up);
+        return PPPERR_NONE;
+      }
+      return PPPERR_PARAM;
+      break;
+
+    case PPPCTLS_ERRCODE:       /* Set the PPP error code. */
+      if (arg) {
+        pcb->err_code = (u8_t)(*(int *)arg);
+        return PPPERR_NONE;
+      }
+      return PPPERR_PARAM;
+      break;
+
+    case PPPCTLG_ERRCODE:       /* Get the PPP error code. */
+      if (arg) {
+        *(int *)arg = (int)(pcb->err_code);
+        return PPPERR_NONE;
+      }
+      return PPPERR_PARAM;
+      break;
+
+#if PPPOS_SUPPORT
+    case PPPCTLG_FD:            /* Get the fd associated with the ppp */
+      if (arg) {
+        *(sio_fd_t *)arg = pcb->fd;
+        return PPPERR_NONE;
+      }
+      return PPPERR_PARAM;
+      break;
+#endif /* PPPOS_SUPPORT */
+
+    default:
+      return PPPERR_PARAM;
+      break;
+  }
+
+  return PPPERR_PARAM;
+}
 
 /*
  * Return user specified netmask, modified by any mask we might determine
