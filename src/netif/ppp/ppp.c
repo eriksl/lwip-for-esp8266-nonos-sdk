@@ -451,6 +451,13 @@ pppInit(void)
 
   /* default configuration */
   pcb->settings.usepeerdns = 1;
+#if PAP_SUPPORT
+  pcb->settings.pap_timeout_time = UPAP_DEFTIMEOUT;
+  pcb->settings.pap_max_transmits = UPAP_DEFTRANSMITS;
+#if PPP_SERVER
+  pcb->settings.pap_req_timeout = UPAP_DEFREQTIME;
+#endif /* PPP_SERVER */
+#endif /* PAP_SUPPORT */
 #if CHAP_SUPPORT
   pcb->settings.chap_timeout_time = CHAP_DEFTIMEOUT;
   pcb->settings.chap_max_transmits = CHAP_DEFTRANSMITS;
