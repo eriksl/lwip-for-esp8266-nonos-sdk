@@ -101,13 +101,11 @@ int peer_mru[NUM_PPP];
  * Initialize fsm state.
  */
 void fsm_init(fsm *f) {
+    ppp_pcb *pcb = f->pcb;
     f->state = PPP_FSM_INITIAL;
     f->flags = 0;
     f->id = 0;				/* XXX Start with random id? */
-    f->timeouttime = FSM_DEFTIMEOUT;
-    f->maxconfreqtransmits = FSM_DEFMAXCONFREQS;
-    f->maxtermtransmits = FSM_DEFMAXTERMREQS;
-    f->maxnakloops = FSM_DEFMAXNAKLOOPS;
+    f->maxnakloops = pcb->settings.fsm_max_nak_loops;
     f->term_reason_len = 0;
 }
 
@@ -252,10 +250,35 @@ fsm_open(fsm *f)
  * Cancel any timeout running, notify upper layers we're done, and
  * send a terminate-request message as configured.
  */
-static void
-terminate_layer(fsm *f, int nextstate)
-{
-  /* @todo */
+static void terminate_layer(fsm *f, int nextstate) {
+    ppp_pcb *pcb = f->pcb;
+
+    if( f->state != PPP_FSM_OPENED )
+	UNTIMEOUT(fsm_timeout, f);	/* Cancel timeout */
+    else if( f->callbacks->down )
+	(*f->callbacks->down)(f);	/* Inform upper layers we're down */
+
+    /* Init restart counter and send Terminate-Request */
+    f->retransmits = pcb->settings.fsm_max_term_transmits;
+    fsm_sdata(f, TERMREQ, f->reqid = ++f->id,
+	      (u_char *) f->term_reason, f->term_reason_len);
+
+    if (f->retransmits == 0) {
+	/*
+	 * User asked for no terminate requests at all; just close it.
+	 * We've already fired off one Terminate-Request just to be nice
+	 * to the peer, but we're not going to wait for a reply.
+	 */
+	f->state = nextstate == PPP_FSM_CLOSING ? PPP_FSM_CLOSED : PPP_FSM_STOPPED;
+	if( f->callbacks->finished )
+	    (*f->callbacks->finished)(f);
+	return;
+    }
+
+    TIMEOUT(fsm_timeout, f, pcb->settings.fsm_timeout_time);
+    --f->retransmits;
+
+    f->state = nextstate;
 }
 #endif
 
@@ -313,58 +336,47 @@ fsm_close(fsm *f, char *reason)
 /*
  * fsm_timeout - Timeout expired.
  */
-static void
-fsm_timeout(void *arg)
-{
-  fsm *f = (fsm *) arg;
+static void fsm_timeout(void *arg) {
+    fsm *f = (fsm *) arg;
+    ppp_pcb *pcb = f->pcb;
 
-  switch (f->state) {
-    case LS_CLOSING:
-    case LS_STOPPING:
-      if( f->retransmits <= 0 ) {
-        FSMDEBUG(LOG_WARNING, ("%s: timeout sending Terminate-Request state=%d (%s)\n",
-             PROTO_NAME(f), f->state, ppperr_strerr[f->state]));
-        /*
-         * We've waited for an ack long enough.  Peer probably heard us.
-         */
-        f->state = (f->state == LS_CLOSING)? LS_CLOSED: LS_STOPPED;
-        if( f->callbacks->finished ) {
-          (*f->callbacks->finished)(f);
-        }
-      } else {
-        FSMDEBUG(LOG_WARNING, ("%s: timeout resending Terminate-Requests state=%d (%s)\n",
-             PROTO_NAME(f), f->state, ppperr_strerr[f->state]));
-        /* Send Terminate-Request */
-        fsm_sdata(f, TERMREQ, f->reqid = ++f->id,
-            (u_char *) f->term_reason, f->term_reason_len);
-        TIMEOUT(fsm_timeout, f, f->timeouttime);
-        --f->retransmits;
-      }
-      break;
+    switch (f->state) {
+    case PPP_FSM_CLOSING:
+    case PPP_FSM_STOPPING:
+	if( f->retransmits <= 0 ){
+	    /*
+	     * We've waited for an ack long enough.  Peer probably heard us.
+	     */
+	    f->state = (f->state == PPP_FSM_CLOSING)? PPP_FSM_CLOSED: PPP_FSM_STOPPED;
+	    if( f->callbacks->finished )
+		(*f->callbacks->finished)(f);
+	} else {
+	    /* Send Terminate-Request */
+	    fsm_sdata(f, TERMREQ, f->reqid = ++f->id,
+		      (u_char *) f->term_reason, f->term_reason_len);
+	    TIMEOUT(fsm_timeout, f, pcb->settings.fsm_timeout_time);
+	    --f->retransmits;
+	}
+	break;
 
-    case LS_REQSENT:
-    case LS_ACKRCVD:
-    case LS_ACKSENT:
-      if (f->retransmits <= 0) {
-        FSMDEBUG(LOG_WARNING, ("%s: timeout sending Config-Requests state=%d (%s)\n",
-         PROTO_NAME(f), f->state, ppperr_strerr[f->state]));
-        f->state = LS_STOPPED;
-        if( (f->flags & OPT_PASSIVE) == 0 && f->callbacks->finished ) {
-          (*f->callbacks->finished)(f);
-        }
-      } else {
-        FSMDEBUG(LOG_WARNING, ("%s: timeout resending Config-Request state=%d (%s)\n",
-         PROTO_NAME(f), f->state, ppperr_strerr[f->state]));
-        /* Retransmit the configure-request */
-        if (f->callbacks->retransmit) {
-          (*f->callbacks->retransmit)(f);
-        }
-        fsm_sconfreq(f, 1);    /* Re-send Configure-Request */
-        if( f->state == LS_ACKRCVD ) {
-          f->state = LS_REQSENT;
-        }
-      }
-      break;
+    case PPP_FSM_REQSENT:
+    case PPP_FSM_ACKRCVD:
+    case PPP_FSM_ACKSENT:
+	if (f->retransmits <= 0) {
+	    ppp_warn("%s: timeout sending Config-Requests\n", PROTO_NAME(f));
+	    f->state = PPP_FSM_STOPPED;
+	    if( (f->flags & OPT_PASSIVE) == 0 && f->callbacks->finished )
+		(*f->callbacks->finished)(f);
+
+	} else {
+	    /* Retransmit the configure-request */
+	    if (f->callbacks->retransmit)
+		(*f->callbacks->retransmit)(f);
+	    fsm_sconfreq(f, 1);		/* Re-send Configure-Request */
+	    if( f->state == PPP_FSM_ACKRCVD )
+		f->state = PPP_FSM_REQSENT;
+	}
+	break;
 
     default:
       FSMDEBUG(LOG_INFO, ("%s: UNHANDLED timeout event in state %d (%s)!\n",
@@ -529,59 +541,54 @@ fsm_rconfreq(fsm *f, u_char id, u_char *inp, int len)
 /*
  * fsm_rconfack - Receive Configure-Ack.
  */
-static void
-fsm_rconfack(fsm *f, int id, u_char *inp, int len)
-{
-  FSMDEBUG(LOG_INFO, ("fsm_rconfack(%s): Rcvd id %d state=%d (%s)\n",
-        PROTO_NAME(f), id, f->state, ppperr_strerr[f->state]));
-  
-  if (id != f->reqid || f->seen_ack) {   /* Expected id? */
-    return; /* Nope, toss... */
-  }
-  if( !(f->callbacks->ackci? (*f->callbacks->ackci)(f, inp, len): (len == 0)) ) {
-    /* Ack is bad - ignore it */
-    FSMDEBUG(LOG_INFO, ("%s: received bad Ack (length %d)\n",
-          PROTO_NAME(f), len));
-    return;
-  }
-  f->seen_ack = 1;
-  
-  switch (f->state) {
-    case LS_CLOSED:
-    case LS_STOPPED:
-      fsm_sdata(f, TERMACK, (u_char)id, NULL, 0);
-      break;
-    
-    case LS_REQSENT:
-      f->state = LS_ACKRCVD;
-      f->retransmits = f->maxconfreqtransmits;
-      break;
-    
-    case LS_ACKRCVD:
-      /* Huh? an extra valid Ack? oh well... */
-      UNTIMEOUT(fsm_timeout, f);  /* Cancel timeout */
-      fsm_sconfreq(f, 0);
-      f->state = LS_REQSENT;
-      break;
-    
-    case LS_ACKSENT:
-      UNTIMEOUT(fsm_timeout, f);  /* Cancel timeout */
-      f->state = LS_OPENED;
-      f->retransmits = f->maxconfreqtransmits;
-      if (f->callbacks->up) {
-        (*f->callbacks->up)(f);  /* Inform upper layers */
-      }
-      break;
-    
-    case LS_OPENED:
-      /* Go down and restart negotiation */
-      if (f->callbacks->down) {
-        (*f->callbacks->down)(f);  /* Inform upper layers */
-      }
-      fsm_sconfreq(f, 0);    /* Send initial Configure-Request */
-      f->state = LS_REQSENT;
-      break;
-  }
+static void fsm_rconfack(fsm *f, int id, u_char *inp, int len) {
+    ppp_pcb *pcb = f->pcb;
+
+    if (id != f->reqid || f->seen_ack)		/* Expected id? */
+	return;					/* Nope, toss... */
+    if( !(f->callbacks->ackci? (*f->callbacks->ackci)(f, inp, len):
+	  (len == 0)) ){
+	/* Ack is bad - ignore it */
+	ppp_error("Received bad configure-ack: %P", inp, len);
+	return;
+    }
+    f->seen_ack = 1;
+    f->rnakloops = 0;
+
+    switch (f->state) {
+    case PPP_FSM_CLOSED:
+    case PPP_FSM_STOPPED:
+	fsm_sdata(f, TERMACK, id, NULL, 0);
+	break;
+
+    case PPP_FSM_REQSENT:
+	f->state = PPP_FSM_ACKRCVD;
+	f->retransmits = pcb->settings.fsm_max_conf_req_transmits;
+	break;
+
+    case PPP_FSM_ACKRCVD:
+	/* Huh? an extra valid Ack? oh well... */
+	UNTIMEOUT(fsm_timeout, f);	/* Cancel timeout */
+	fsm_sconfreq(f, 0);
+	f->state = PPP_FSM_REQSENT;
+	break;
+
+    case PPP_FSM_ACKSENT:
+	UNTIMEOUT(fsm_timeout, f);	/* Cancel timeout */
+	f->state = PPP_FSM_OPENED;
+	f->retransmits = pcb->settings.fsm_max_conf_req_transmits;
+	if (f->callbacks->up)
+	    (*f->callbacks->up)(f);	/* Inform upper layers */
+	break;
+
+    case PPP_FSM_OPENED:
+	/* Go down and restart negotiation */
+	if (f->callbacks->down)
+	    (*f->callbacks->down)(f);	/* Inform upper layers */
+	fsm_sconfreq(f, 0);		/* Send initial Configure-Request */
+	f->state = PPP_FSM_REQSENT;
+	break;
+    }
 }
 
 
@@ -648,36 +655,29 @@ fsm_rconfnakrej(fsm *f, int code, int id, u_char *inp, int len)
 /*
  * fsm_rtermreq - Receive Terminate-Req.
  */
-static void
-fsm_rtermreq(fsm *f, int id, u_char *p, int len)
-{
-  LWIP_UNUSED_ARG(p);
+static void fsm_rtermreq(fsm *f, int id, u_char *p, int len) {
+    ppp_pcb *pcb = f->pcb;
 
-  FSMDEBUG(LOG_INFO, ("fsm_rtermreq(%s): Rcvd id %d state=%d (%s)\n",
-        PROTO_NAME(f), id, f->state, ppperr_strerr[f->state]));
+    switch (f->state) {
+    case PPP_FSM_ACKRCVD:
+    case PPP_FSM_ACKSENT:
+	f->state = PPP_FSM_REQSENT;		/* Start over but keep trying */
+	break;
 
-  switch (f->state) {
-    case LS_ACKRCVD:
-    case LS_ACKSENT:
-      f->state = LS_REQSENT;    /* Start over but keep trying */
-      break;
+    case PPP_FSM_OPENED:
+	if (len > 0) {
+	    ppp_info("%s terminated by peer (%0.*v)", PROTO_NAME(f), len, p);
+	} else
+	    ppp_info("%s terminated by peer", PROTO_NAME(f));
+	f->retransmits = 0;
+	f->state = PPP_FSM_STOPPING;
+	if (f->callbacks->down)
+	    (*f->callbacks->down)(f);	/* Inform upper layers */
+	TIMEOUT(fsm_timeout, f, pcb->settings.fsm_timeout_time);
+	break;
+    }
 
-    case LS_OPENED:
-      if (len > 0) {
-        FSMDEBUG(LOG_INFO, ("%s terminated by peer (%p)\n", PROTO_NAME(f), p));
-      } else {
-        FSMDEBUG(LOG_INFO, ("%s terminated by peer\n", PROTO_NAME(f)));
-      }
-      if (f->callbacks->down) {
-        (*f->callbacks->down)(f);  /* Inform upper layers */
-      }
-      f->retransmits = 0;
-      f->state = LS_STOPPING;
-      TIMEOUT(fsm_timeout, f, f->timeouttime);
-      break;
-  }
-
-  fsm_sdata(f, TERMACK, (u_char)id, NULL, 0);
+    fsm_sdata(f, TERMACK, id, NULL, 0);
 }
 
 
@@ -817,42 +817,21 @@ fsm_sconfreq(fsm *f, int retransmit)
     if( f->callbacks->resetci ) {
       (*f->callbacks->resetci)(f);
     }
-    f->nakloops = 0;
-  }
-  
-  if( !retransmit ) {
-    /* New request - reset retransmission counter, use new ID */
-    f->retransmits = f->maxconfreqtransmits;
-    f->reqid = ++f->id;
-  }
-  
-  f->seen_ack = 0;
-  
-  /*
-   * Make up the request packet
-   */
-  outp = outpacket_buf[f->unit] + PPP_HDRLEN + HEADERLEN;
-  if( f->callbacks->cilen && f->callbacks->addci ) {
-    cilen = (*f->callbacks->cilen)(f);
-    if( cilen > peer_mru[f->unit] - (int)HEADERLEN ) {
-      cilen = peer_mru[f->unit] - HEADERLEN;
+
+    if( !retransmit ){
+	/* New request - reset retransmission counter, use new ID */
+	f->retransmits = pcb->settings.fsm_max_conf_req_transmits;
+	f->reqid = ++f->id;
     }
     if (f->callbacks->addci) {
       (*f->callbacks->addci)(f, outp, &cilen);
     }
-  } else {
-    cilen = 0;
-  }
 
-  /* send the request to our peer */
-  fsm_sdata(f, CONFREQ, f->reqid, outp, cilen);
-  
-  /* start the retransmit timer */
-  --f->retransmits;
-  TIMEOUT(fsm_timeout, f, f->timeouttime);
-  
-  FSMDEBUG(LOG_INFO, ("%s: sending Configure-Request, id %d\n",
-        PROTO_NAME(f), f->reqid));
+    ppp_write(pcb, p);
+
+    /* start the retransmit timer */
+    --f->retransmits;
+    TIMEOUT(fsm_timeout, f, pcb->settings.fsm_timeout_time);
 }
 
 
