@@ -455,7 +455,7 @@ pppInit(void)
   pcb->settings.chap_timeout_time = CHAP_DEFTIMEOUT;
   pcb->settings.chap_max_transmits = CHAP_DEFTRANSMITS;
 #endif /* CHAP_SUPPPORT */
-  pcb->settings.lcp_loopbackfail = DEFLOOPBACKFAIL;
+  pcb->settings.lcp_loopbackfail = LCP_DEFLOOPBACKFAIL;
   pcb->settings.lcp_echo_interval = LCP_ECHOINTERVAL;
   pcb->settings.lcp_echo_fails = LCP_MAXECHOFAILS;
 
