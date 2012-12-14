@@ -159,7 +159,16 @@ ip_input(struct pbuf *p, struct netif *inp) {
   struct netif *netif;
 
 
-  PERF_START;
+  /* identify the IP header */
+  ip6hdr = (struct ip6_hdr *)p->payload;
+  if (IP6H_V(ip6hdr) != 6) {
+    LWIP_DEBUGF(IP6_DEBUG | LWIP_DBG_LEVEL_WARNING, ("IPv6 packet dropped due to bad version number %"U32_F"\n",
+        IP6H_V(ip6hdr)));
+    pbuf_free(p);
+    IP6_STATS_INC(ip6.err);
+    IP6_STATS_INC(ip6.drop);
+    return ERR_OK;
+  }
 
 #if IP_DEBUG
   ip_debug_print(p);
