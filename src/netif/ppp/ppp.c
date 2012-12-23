@@ -1287,6 +1287,18 @@ ppp_send_config( int unit, u16_t mtu, u32_t asyncmap, int pcomp, int accomp)
             pc->outACCM[0], pc->outACCM[1], pc->outACCM[2], pc->outACCM[3]));
 }
 
+  for(b = nb; b != NULL; b = b->next) {
+    c = sio_write(pcb->fd, b->payload, b->len)
+    if(c != b->len) {
+      PPPDEBUG(LOG_WARNING,
+               ("PPP pppos_put: incomplete sio_write(fd:%"SZT_F", len:%d, c: 0x%"X8_F") c = %d\n", (size_t)pcb->fd, b->len, c, c));
+      LINK_STATS_INC(link.err);
+      pcb->last_xmit = 0; /* prepend PPP_FLAG to next packet */
+      snmp_inc_ifoutdiscards(&pcb->netif);
+      pbuf_free(nb);
+      return;
+    }
+  }
 
 /*
  * ppp_set_xaccm - set the extended transmit ACCM for the interface.
@@ -1376,7 +1388,46 @@ get_idle_time(int u, struct ppp_idle *ip)
   LWIP_UNUSED_ARG(u);
   LWIP_UNUSED_ARG(ip);
 
-  return 0;
+  /* Validate parameters. */
+  /* We let any protocol value go through - it can't hurt us
+   * and the peer will just drop it if it's not accepting it. */
+  if (!pcb || !pb) {
+    PPPDEBUG(LOG_WARNING, ("ppp_netif_output[%d]: bad params prot=%d pb=%p\n",
+              pcb->num, PPP_IP, (void*)pb));
+    LINK_STATS_INC(link.opterr);
+    LINK_STATS_INC(link.drop);
+    snmp_inc_ifoutdiscards(netif);
+    return ERR_ARG;
+  }
+
+  /* Check that the link is up. */
+  if (!pcb->if_up) {
+    PPPDEBUG(LOG_ERR, ("ppp_netif_output[%d]: link not up\n", pcb->num));
+    LINK_STATS_INC(link.rterr);
+    LINK_STATS_INC(link.drop);
+    snmp_inc_ifoutdiscards(netif);
+    return ERR_RTE;
+  }
+
+#if PPPOE_SUPPORT
+  if(pcb->pppoe_sc) {
+    return ppp_netif_output_over_ethernet(pcb, pb, protocol);
+  }
+#endif /* PPPOE_SUPPORT */
+
+#if PPPOL2TP_SUPPORT
+  if(pcb->l2tp_pcb) {
+    return ppp_netif_output_over_l2tp(pcb, pb, protocol);
+  }
+#endif /* PPPOL2TP_SUPPORT */
+
+#if PPPOS_SUPPORT
+  return ppp_netif_output_over_serial(pcb, pb, protocol);
+#endif /* PPPOS_SUPPORT */
+
+#if !PPPOS_SUPPORT
+  return ERR_OK;
+#endif
 }
 
 #if PPPOS_SUPPORT
@@ -1615,10 +1666,6 @@ ppp_ioctl(ppp_pcb *pcb, int cmd, void *arg)
       return PPPERR_PARAM;
       break;
 #endif /* PPPOS_SUPPORT */
-
-    default:
-      return PPPERR_PARAM;
-      break;
   }
 
   return PPPERR_PARAM;
@@ -1654,7 +1701,10 @@ GetMask(u32_t addr)
    * Get each netmask and OR them into our mask.
    */
 
-  return mask;
+#if !PPPOS_SUPPORT
+  pbuf_free(p);
+  return PPPERR_NONE;
+#endif
 }
 
 /*
