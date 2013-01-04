@@ -1139,7 +1139,182 @@ lcp_nakci(fsm *f, u_char *p, int len)
     *go = try;
   }
 
-  return 1;
+#if LQR_SUPPORT
+    /*
+     * If they can't cope with our link quality protocol, we'll have
+     * to stop asking for LQR.  We haven't got any other protocol.
+     * If they Nak the reporting period, take their value XXX ?
+     */
+    NAKCILQR(CI_QUALITY, neg_lqr,
+	     if (cishort != PPP_LQR)
+		 try.neg_lqr = 0;
+	     else
+		 try.lqr_period = cilong;
+	     );
+#endif /* LQR_SUPPORT */
+
+    /*
+     * Only implementing CBCP...not the rest of the callback options
+     */
+    NAKCICHAR(CI_CALLBACK, neg_cbcp,
+              try.neg_cbcp = 0;
+              (void)cichar; /* if CHAP support is not compiled, cichar is set but not used, which makes some compilers complaining */
+              );
+
+    /*
+     * Check for a looped-back line.
+     */
+    NAKCILONG(CI_MAGICNUMBER, neg_magicnumber,
+	      try.magicnumber = magic();
+	      looped_back = 1;
+	      );
+
+    /*
+     * Peer shouldn't send Nak for protocol compression or
+     * address/control compression requests; they should send
+     * a Reject instead.  If they send a Nak, treat it as a Reject.
+     */
+    NAKCIVOID(CI_PCOMPRESSION, neg_pcompression);
+    NAKCIVOID(CI_ACCOMPRESSION, neg_accompression);
+
+#ifdef HAVE_MULTILINK
+    /*
+     * Nak for MRRU option - accept their value if it is smaller
+     * than the one we want.
+     */
+    if (go->neg_mrru) {
+	NAKCISHORT(CI_MRRU, neg_mrru,
+		   if (treat_as_reject)
+		       try.neg_mrru = 0;
+		   else if (cishort <= wo->mrru)
+		       try.mrru = cishort;
+		   );
+    }
+#endif /* HAVE_MULTILINK */
+
+    /*
+     * Nak for short sequence numbers shouldn't be sent, treat it
+     * like a reject.
+     */
+    NAKCIVOID(CI_SSNHF, neg_ssnhf);
+
+    /*
+     * Nak of the endpoint discriminator option is not permitted,
+     * treat it like a reject.
+     */
+    NAKCIENDP(CI_EPDISC, neg_endpoint);
+
+    /*
+     * There may be remaining CIs, if the peer is requesting negotiation
+     * on an option that we didn't include in our request packet.
+     * If we see an option that we requested, or one we've already seen
+     * in this packet, then this packet is bad.
+     * If we wanted to respond by starting to negotiate on the requested
+     * option(s), we could, but we don't, because except for the
+     * authentication type and quality protocol, if we are not negotiating
+     * an option, it is because we were told not to.
+     * For the authentication type, the Nak from the peer means
+     * `let me authenticate myself with you' which is a bit pointless.
+     * For the quality protocol, the Nak means `ask me to send you quality
+     * reports', but if we didn't ask for them, we don't want them.
+     * An option we don't recognize represents the peer asking to
+     * negotiate some option we don't support, so ignore it.
+     */
+    while (len >= CILEN_VOID) {
+	GETCHAR(citype, p);
+	GETCHAR(cilen, p);
+	if (cilen < CILEN_VOID || (len -= cilen) < 0)
+	    goto bad;
+	next = p + cilen - 2;
+
+	switch (citype) {
+	case CI_MRU:
+	    if ((go->neg_mru && go->mru != DEFMRU)
+		|| no.neg_mru || cilen != CILEN_SHORT)
+		goto bad;
+	    GETSHORT(cishort, p);
+	    if (cishort < DEFMRU) {
+		try.neg_mru = 1;
+		try.mru = cishort;
+	    }
+	    break;
+	case CI_ASYNCMAP:
+	    if ((go->neg_asyncmap && go->asyncmap != 0xFFFFFFFF)
+		|| no.neg_asyncmap || cilen != CILEN_LONG)
+		goto bad;
+	    break;
+	case CI_AUTHTYPE:
+	    if (0
+#if CHAP_SUPPORT
+                || go->neg_chap || no.neg_chap
+#endif /* CHAP_SUPPORT */
+#if PAP_SUPPORT
+                || go->neg_upap || no.neg_upap
+#endif /* PAP_SUPPORT */
+#if EAP_SUPPORT
+		|| go->neg_eap || no.neg_eap
+#endif /* EAP_SUPPORT */
+		)
+		goto bad;
+	    break;
+	case CI_MAGICNUMBER:
+	    if (go->neg_magicnumber || no.neg_magicnumber ||
+		cilen != CILEN_LONG)
+		goto bad;
+	    break;
+	case CI_PCOMPRESSION:
+	    if (go->neg_pcompression || no.neg_pcompression
+		|| cilen != CILEN_VOID)
+		goto bad;
+	    break;
+	case CI_ACCOMPRESSION:
+	    if (go->neg_accompression || no.neg_accompression
+		|| cilen != CILEN_VOID)
+		goto bad;
+	    break;
+#if LQR_SUPPORT
+	case CI_QUALITY:
+	    if (go->neg_lqr || no.neg_lqr || cilen != CILEN_LQR)
+		goto bad;
+	    break;
+#endif /* LQR_SUPPORT */
+#ifdef HAVE_MULTILINK
+	case CI_MRRU:
+	    if (go->neg_mrru || no.neg_mrru || cilen != CILEN_SHORT)
+		goto bad;
+	    break;
+#endif /* HAVE_MULTILINK */
+	case CI_SSNHF:
+	    if (go->neg_ssnhf || no.neg_ssnhf || cilen != CILEN_VOID)
+		goto bad;
+	    try.neg_ssnhf = 1;
+	    break;
+	case CI_EPDISC:
+	    if (go->neg_endpoint || no.neg_endpoint || cilen < CILEN_CHAR)
+		goto bad;
+	    break;
+	}
+	p = next;
+    }
+
+    /*
+     * OK, the Nak is good.  Now we can update state.
+     * If there are any options left we ignore them.
+     */
+    if (f->state != PPP_FSM_OPENED) {
+	if (looped_back) {
+	    if (++try.numloops >= pcb->settings.lcp_loopbackfail) {
+		int errcode = PPPERR_LOOPBACK;
+		ppp_notice("Serial line is looped back.");
+		ppp_ioctl(pcb, PPPCTLS_ERRCODE, &errcode);
+		lcp_close(f->pcb, "Loopback detected");
+	    }
+	} else
+	    try.numloops = 0;
+	*go = try;
+    }
+
+    return 1;
 
 bad:
   LCPDEBUG(LOG_WARNING, ("lcp_nakci: received bad Nak!\n"));
