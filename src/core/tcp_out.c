@@ -1368,7 +1368,9 @@ void
 tcp_keepalive(struct tcp_pcb *pcb)
 {
   struct pbuf *p;
+#if CHECKSUM_GEN_TCP
   struct tcp_hdr *tcphdr;
+#endif /* CHECKSUM_GEN_TCP */
 
   LWIP_DEBUGF(TCP_DEBUG, ("tcp_keepalive: sending KEEPALIVE probe to %"U16_F".%"U16_F".%"U16_F".%"U16_F"\n",
                           ip4_addr1_16(&pcb->remote_ip), ip4_addr2_16(&pcb->remote_ip),
@@ -1383,12 +1385,12 @@ tcp_keepalive(struct tcp_pcb *pcb)
                 ("tcp_keepalive: could not allocate memory for pbuf\n"));
     return;
   }
+#if CHECKSUM_GEN_TCP
   tcphdr = (struct tcp_hdr *)p->payload;
 
-#if CHECKSUM_GEN_TCP
-  tcphdr->chksum = inet_chksum_pseudo(p, &pcb->local_ip, &pcb->remote_ip,
-                                      IP_PROTO_TCP, p->tot_len);
-#endif
+  tcphdr->chksum = ipX_chksum_pseudo(PCB_ISIPV6(pcb), p, IP_PROTO_TCP, p->tot_len,
+      &pcb->local_ip, &pcb->remote_ip);
+#endif /* CHECKSUM_GEN_TCP */
   TCP_STATS_INC(tcp.xmit);
 
   /* Send output to IP */
