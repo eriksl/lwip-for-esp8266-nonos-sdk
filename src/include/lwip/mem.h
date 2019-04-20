@@ -50,15 +50,35 @@ typedef size_t mem_size_t;
 /* in case C library malloc() needs extra protection,
  * allow these defines to be overridden.
  */
-#ifndef mem_free
-#define mem_free free
-#endif
-#ifndef mem_malloc
-#define mem_malloc malloc
-#endif
-#ifndef mem_calloc
-#define mem_calloc calloc
-#endif
+// erik code
+static __attribute__((always_inline)) inline void mem_free(void *chunk)
+{
+	extern void vPortFree (void *chunk, const char *file, unsigned int line);
+
+	vPortFree(chunk, "", 0);
+}
+
+static __attribute__((always_inline)) inline void *mem_malloc(mem_size_t size)
+{
+	extern void *pvPortMalloc(size_t size, const char *file, unsigned int line, unsigned char use_iram);
+
+	return(pvPortMalloc(size, "", 0, false));
+}
+
+static __attribute__((always_inline)) inline void *mem_calloc(mem_size_t amount, mem_size_t size)
+{
+	extern void *pvPortCalloc(size_t count, size_t size, const char *file, unsigned int line);
+
+	return(pvPortCalloc(amount, size, "", 0));
+}
+
+static __attribute__((always_inline)) inline void *mem_realloc(void *previous, mem_size_t amount)
+{
+	extern void *pvPortRealloc(void *chunk, size_t size, const char *file, unsigned int line);
+
+	return(pvPortRealloc(previous, amount, "", 0));
+}
+
 /* Since there is no C library allocation function to shrink memory without
    moving it, define this to nothing. */
 #ifndef mem_trim
