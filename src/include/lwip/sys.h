@@ -294,8 +294,10 @@ void sys_arch_unprotect(sys_prot_t pval);
 #else
 
 #define SYS_ARCH_DECL_PROTECT(lev)
-#define SYS_ARCH_PROTECT(lev)
-#define SYS_ARCH_UNPROTECT(lev)
+// Espressif code
+#define SYS_ARCH_PROTECT(lev) lev = os_intr_lock()
+// Espressif code
+#define SYS_ARCH_UNPROTECT(lev) lev = os_intr_unlock()
 
 #endif /* SYS_LIGHTWEIGHT_PROT */
 
