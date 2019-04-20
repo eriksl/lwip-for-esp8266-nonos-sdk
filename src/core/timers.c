@@ -309,7 +309,8 @@ void sys_timeouts_init(void)
 
 #if NO_SYS
   /* Initialise timestamp for sys_check_timeouts */
-  timeouts_last_time = sys_now();
+// Espressif code
+  timeouts_last_time = NOW();
 #endif
 }
 
@@ -428,7 +429,8 @@ sys_untimeout(sys_timeout_handler handler, void *arg)
 }
 
 #if NO_SYS
-
+// Espressif code
+extern uint8_t timer2_ms_flag;
 /** Handle timeouts for NO_SYS==1 (i.e. without using
  * tcpip_thread/sys_timeouts_mbox_fetch(). Uses sys_now() to call timeout
  * handler functions when timeouts expire.
@@ -446,9 +448,16 @@ sys_check_timeouts(void)
     u8_t had_one;
     u32_t now;
 
-    now = sys_now();
+// Espressif code
+  now = NOW();
+
     /* this cares for wraparounds */
-    diff = now - timeouts_last_time;
+// Espressif code
+	if (timer2_ms_flag == 0) {
+		diff = LWIP_U32_DIFF(now, timeouts_last_time)/((APB_CLK_FREQ>>4)/1000);
+	} else {
+		diff = LWIP_U32_DIFF(now, timeouts_last_time)/((APB_CLK_FREQ>>8)/1000);
+	}
     do
     {
 #if PBUF_POOL_FREE_OOSEQ
@@ -488,7 +497,8 @@ sys_check_timeouts(void)
 void
 sys_restart_timeouts(void)
 {
-  timeouts_last_time = sys_now();
+// Espressif code
+  timeouts_last_time = NOW();
 }
 
 /** Return the time left before the next timeout is due. If no timeouts are
