@@ -1,3 +1,20 @@
+### lwip-for-esp8266-nonos-sdk ###
+
+LWIP from the original LWIP source repository, with minimal patching
+to get it working on the ESP8266.
+
+For the ESP8266, non-os SDK, Espressif took an ancient version of LWIP,
+fiddled around with it a lot until it sort of worked, left much of the
+debugging and workaround code in, created the "espconn" on top of it,
+while it didn't add any value at all to LWIP.
+
+Espressif has informed that it won't spend much effort on the non-os SDK
+anymore, so that leaves us with an ancient LWIP version. The goal of this
+fork is to bring the LWIP source as much as possible in line with the official
+LWIP source and from there we can start to try to upgrade to newer versions.
+
+Here follows the original README
+
 INTRODUCTION
 
 lwIP is a small independent implementation of the TCP/IP protocol
