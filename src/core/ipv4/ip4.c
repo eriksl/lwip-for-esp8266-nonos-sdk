@@ -83,7 +83,8 @@
          || (LWIP_IP_ACCEPT_UDP_PORT(port)))
 #elif defined(LWIP_IP_ACCEPT_UDP_PORT) /* LWIP_DHCP && defined(LWIP_IP_ACCEPT_UDP_PORT) */
 /* accept custom port only */
-#define IP_ACCEPT_LINK_LAYER_ADDRESSED_PORT(port) (LWIP_IP_ACCEPT_UDP_PORT(port))
+// Espressif code
+#define IP_ACCEPT_LINK_LAYER_ADDRESSED_PORT(port) (LWIP_IP_ACCEPT_UDP_PORT(dst_port))
 #else /* LWIP_DHCP && defined(LWIP_IP_ACCEPT_UDP_PORT) */
 /* accept DHCP client port only */
 #define IP_ACCEPT_LINK_LAYER_ADDRESSED_PORT(port) ((port) == PP_NTOHS(DHCP_CLIENT_PORT))
@@ -92,6 +93,9 @@
 #else /* LWIP_DHCP */
 #define IP_ACCEPT_LINK_LAYER_ADDRESSING 0
 #endif /* LWIP_DHCP */
+
+// Espressif code
+struct netif *eagle_lwip_getif(uint8_t index);
 
 /** Global data for both IPv4 and IPv6 */
 struct ip_globals ip_data;
@@ -126,6 +130,16 @@ ip_route(ip_addr_t *dest)
     if (netif_is_up(netif)) {
       if (ip_addr_netcmp(dest, &(netif->ip_addr), &(netif->netmask))) {
         /* return netif on which to forward IP packet */
+        return netif;
+      }
+    }
+  }
+// Espressif code
+  /* iterate through netifs */
+  for(netif = netif_list; netif != NULL; netif = netif->next) {
+    /* network mask matches? */
+    if (netif_is_up(netif)) {
+      if (!ip_addr_isbroadcast(dest, netif) && netif == (struct netif *)eagle_lwip_getif(0)) {
         return netif;
       }
     }
@@ -735,6 +749,12 @@ err_t ip_output_if_opt(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
     chk_sum += iphdr->_id;
 #endif /* CHECKSUM_GEN_IP_INLINE */
     ++ip_id;
+// Espressif code
+   if (IPH_PROTO(iphdr) == IP_PROTO_TCP)
+	{
+		IPH_OFFSET_SET(iphdr, htons(IP_DF));
+		chk_sum += iphdr->_offset;
+	}
     if (ip_addr_isany(src)) {
       ip_addr_copy(iphdr->src, netif->ip_addr);
     } else {
