@@ -96,7 +96,10 @@ void   igmp_input(struct pbuf *p, struct netif *inp, const ip4_addr_t *dest);
 err_t  igmp_joingroup(const ip4_addr_t *ifaddr, const ip4_addr_t *groupaddr);
 err_t  igmp_leavegroup(const ip4_addr_t *ifaddr, const ip4_addr_t *groupaddr);
 void   igmp_tmr(void);
-
+// Espressif code
+int    r_rand(void);
+#undef LWIP_RAND
+#define LWIP_RAND()  r_rand()
 #ifdef __cplusplus
 }
 #endif
