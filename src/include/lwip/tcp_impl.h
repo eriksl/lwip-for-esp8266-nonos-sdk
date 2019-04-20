@@ -116,7 +116,8 @@ err_t            tcp_process_refused_data(struct tcp_pcb *pcb);
 #define TCP_HLEN 20
 
 #ifndef TCP_TMR_INTERVAL
-#define TCP_TMR_INTERVAL       250  /* The TCP timer interval in milliseconds. */
+// Espressif code
+#define TCP_TMR_INTERVAL       125  /* The TCP timer interval in milliseconds. */
 #endif /* TCP_TMR_INTERVAL */
 
 #ifndef TCP_FAST_INTERVAL

@@ -296,6 +296,10 @@ void sys_timeouts_init(void)
   sys_timeout(DNS_TMR_INTERVAL, dns_timer, NULL);
 #endif /* LWIP_DNS */
 
+// Espressif code
+#if LWIP_TCP
+  sys_timeout(TCP_TMR_INTERVAL, tcpip_tcp_timer, NULL);
+#endif
 #if LWIP_IPV6
   sys_timeout(ND6_TMR_INTERVAL, nd6_timer, NULL);
 #if LWIP_IPV6_REASS
