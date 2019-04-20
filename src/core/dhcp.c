@@ -301,12 +301,21 @@ dhcp_select(struct netif *netif)
 
     dhcp_option(dhcp, DHCP_OPTION_SERVER_ID, 4);
     dhcp_option_long(dhcp, ntohl(ip4_addr_get_u32(&dhcp->server_ip_addr)));
-
-    dhcp_option(dhcp, DHCP_OPTION_PARAMETER_REQUEST_LIST, 4/*num options*/);
+// Espressif code
+    dhcp_option(dhcp, DHCP_OPTION_PARAMETER_REQUEST_LIST, 12/*num options*/);
     dhcp_option_byte(dhcp, DHCP_OPTION_SUBNET_MASK);
     dhcp_option_byte(dhcp, DHCP_OPTION_ROUTER);
     dhcp_option_byte(dhcp, DHCP_OPTION_BROADCAST);
     dhcp_option_byte(dhcp, DHCP_OPTION_DNS_SERVER);
+// Espressif code
+    dhcp_option_byte(dhcp, DHCP_OPTION_DOMAIN_NAME);
+        dhcp_option_byte(dhcp, DHCP_OPTION_NB_TINS);
+        dhcp_option_byte(dhcp, DHCP_OPTION_NB_TINT);
+        dhcp_option_byte(dhcp, DHCP_OPTION_NB_TIS);
+        dhcp_option_byte(dhcp, DHCP_OPTION_PRD);
+        dhcp_option_byte(dhcp, DHCP_OPTION_STATIC_ROUTER);
+        dhcp_option_byte(dhcp, DHCP_OPTION_CLASSLESS_STATIC_ROUTER);
+        dhcp_option_byte(dhcp, DHCP_OPTION_VSN);
 
 #if LWIP_NETIF_HOSTNAME
     dhcp_option_hostname(dhcp, netif);
@@ -915,6 +924,14 @@ dhcp_discover(struct netif *netif)
     dhcp_option_byte(dhcp, DHCP_OPTION_ROUTER);
     dhcp_option_byte(dhcp, DHCP_OPTION_BROADCAST);
     dhcp_option_byte(dhcp, DHCP_OPTION_DNS_SERVER);
+    dhcp_option_byte(dhcp, DHCP_OPTION_DOMAIN_NAME);
+            dhcp_option_byte(dhcp, DHCP_OPTION_NB_TINS);
+            dhcp_option_byte(dhcp, DHCP_OPTION_NB_TINT);
+            dhcp_option_byte(dhcp, DHCP_OPTION_NB_TIS);
+            dhcp_option_byte(dhcp, DHCP_OPTION_PRD);
+            dhcp_option_byte(dhcp, DHCP_OPTION_STATIC_ROUTER);
+            dhcp_option_byte(dhcp, DHCP_OPTION_CLASSLESS_STATIC_ROUTER);
+            dhcp_option_byte(dhcp, DHCP_OPTION_VSN);
 
     dhcp_option_trailer(dhcp);
 
