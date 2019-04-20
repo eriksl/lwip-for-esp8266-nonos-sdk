@@ -149,6 +149,8 @@ arp_timer(void *arg)
  *
  * @param arg unused argument
  */
+// erik code
+void dhcps_coarse_tmr(void);
 static void
 dhcp_timer_coarse(void *arg)
 {
