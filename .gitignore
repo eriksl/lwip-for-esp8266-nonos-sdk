@@ -1,0 +1,2 @@
+*.o
+xtensa-lx106-elf/lib/liblwip.a
