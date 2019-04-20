@@ -104,6 +104,17 @@ icmp_input(struct pbuf *p, struct netif *inp)
     /* This is OK, echo reply might have been parsed by a raw PCB
        (as obviously, an echo request has been sent, too). */
     break; 
+// Espressif code
+  case ICMP_DUR:
+	{
+      u16_t next_mtu = 0;
+      next_mtu = *(u8_t *)((u8_t *)p->payload + 6);
+      next_mtu <<= 8;
+      next_mtu |= *(u8_t *)((u8_t *)p->payload + 7);
+      if (next_mtu != 0 && next_mtu != inp->mtu)
+        inp->mtu = next_mtu;
+	}
+	break;
   case ICMP_ECHO:
 #if !LWIP_MULTICAST_PING || !LWIP_BROADCAST_PING
     {
