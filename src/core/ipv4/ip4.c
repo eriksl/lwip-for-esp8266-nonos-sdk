@@ -92,6 +92,9 @@
 #define IP_ACCEPT_LINK_LAYER_ADDRESSING 0
 #endif /* LWIP_DHCP */
 
+// Espressif code
+struct netif *eagle_lwip_getif(uint8_t index);
+
 /** Global data for both IPv4 and IPv6 */
 struct ip_globals ip_data;
 
@@ -149,6 +152,16 @@ ip_route(const ip_addr_t *dest)
         ) {
       if (ip_addr_netcmp(dest, &(netif->ip_addr), &(netif->netmask))) {
         /* return netif on which to forward IP packet */
+        return netif;
+      }
+    }
+  }
+// Espressif code
+  /* iterate through netifs */
+  for(netif = netif_list; netif != NULL; netif = netif->next) {
+    /* network mask matches? */
+    if (netif_is_up(netif)) {
+      if (!ip_addr_isbroadcast(dest, netif) && netif == (struct netif *)eagle_lwip_getif(0)) {
         return netif;
       }
     }
