@@ -217,10 +217,14 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
     /* add room for transport (often TCP) layer header */
     offset = PBUF_LINK_HLEN + PBUF_IP_HLEN + PBUF_TRANSPORT_HLEN;
     break;
+// erik code
+	__attribute__((fallthrough));
   case PBUF_IP:
     /* add room for IP layer header */
     offset = PBUF_LINK_HLEN + PBUF_IP_HLEN;
     break;
+// erik code
+	__attribute__((fallthrough));
   case PBUF_LINK:
     /* add room for link layer header */
     offset = PBUF_LINK_HLEN;
@@ -376,10 +380,14 @@ pbuf_alloced_custom(pbuf_layer l, u16_t length, pbuf_type type, struct pbuf_cust
     /* add room for transport (often TCP) layer header */
     offset = PBUF_LINK_HLEN + PBUF_IP_HLEN + PBUF_TRANSPORT_HLEN;
     break;
+// erik code
+	__attribute__((fallthrough));
   case PBUF_IP:
     /* add room for IP layer header */
     offset = PBUF_LINK_HLEN + PBUF_IP_HLEN;
     break;
+// erik code
+	__attribute__((fallthrough));
   case PBUF_LINK:
     /* add room for link layer header */
     offset = PBUF_LINK_HLEN;

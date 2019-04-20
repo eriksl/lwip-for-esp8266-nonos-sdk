@@ -807,6 +807,8 @@ etharp_arp_input(struct netif *netif, struct eth_addr *ethaddr, struct pbuf *p)
       netif->linkoutput(netif, p);
     /* we are not configured? */
     } else if (ip_addr_isany(&netif->ip_addr)) {
+// erik code
+		(void)0;
       /* { for_us == 0 and netif->ip_addr.addr == 0 } */
       LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_arp_input: we are unconfigured, ARP request ignored.\n"));
     /* request was not directed to us */
