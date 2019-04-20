@@ -220,21 +220,24 @@ ipaddr_aton(const char *cp, ip_addr_t *addr)
     break;
 
   case 2:             /* a.b -- 8.24 bits */
-    if (val > 0xffffffUL) {
+// Espressif code
+    if ((val > 0xffffffUL) || (parts[0] > 0xff)) {
       return (0);
     }
     val |= parts[0] << 24;
     break;
 
   case 3:             /* a.b.c -- 8.8.16 bits */
-    if (val > 0xffff) {
+// Espressif code
+    if ((val > 0xffff) || (parts[0] > 0xff) || (parts[1] > 0xff)) {
       return (0);
     }
     val |= (parts[0] << 24) | (parts[1] << 16);
     break;
 
   case 4:             /* a.b.c.d -- 8.8.8.8 bits */
-    if (val > 0xff) {
+// Espressif code
+    if ((val > 0xff) || (parts[0] > 0xff) || (parts[1] > 0xff) || (parts[2] > 0xff)) {
       return (0);
     }
     val |= (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8);
