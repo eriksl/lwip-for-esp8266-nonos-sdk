@@ -74,7 +74,10 @@
 #define TCP_KEEP_INTVL(pcb) TCP_KEEPINTVL_DEFAULT
 #endif /* LWIP_TCP_KEEPALIVE */
 
-const char * const tcp_state_str[] = {
+// erik code
+#if TCP_DEBUG || TCP_INPUT_DEBUG || TCP_OUTPUT_DEBUG
+// Espressif code
+const char tcp_state_str_rodata[][12] __attribute__((section(".irom.text"))) = {
   "CLOSED",      
   "LISTEN",      
   "SYN_SENT",    
@@ -88,6 +91,8 @@ const char * const tcp_state_str[] = {
   "TIME_WAIT"   
 };
 
+char tcp_state_str[12];
+#endif
 /* last local TCP port */
 static u16_t tcp_port = TCP_LOCAL_PORT_RANGE_START;
 
@@ -1858,11 +1863,16 @@ void tcp_netif_ipv4_addr_changed(const ip_addr_t* old_addr, const ip_addr_t* new
   }
 }
 
+// erik code
+#if TCP_DEBUG || TCP_INPUT_DEBUG || TCP_OUTPUT_DEBUG
 const char*
 tcp_debug_state_str(enum tcp_state s)
 {
-  return tcp_state_str[s];
+	// Espressif code
+	system_get_string_from_flash(tcp_state_str_rodata[s], tcp_state_str, 12);
+	return tcp_state_str;
 }
+#endif
 
 #if TCP_DEBUG || TCP_INPUT_DEBUG || TCP_OUTPUT_DEBUG
 /**
