@@ -311,6 +311,17 @@ dhcp_select(struct netif *netif)
 #if LWIP_NETIF_HOSTNAME
     dhcp_option_hostname(dhcp, netif);
 #endif /* LWIP_NETIF_HOSTNAME */
+// Espressif code
+    if (vendor_class_buf != NULL) {
+      const char *p = (const char*)vendor_class_buf;
+      if (vendor_class_len > 0) {
+        LWIP_ASSERT("DHCP: vendor_class_len is too long!", vendor_class_len < 255);
+        dhcp_option(dhcp, DHCP_OPTION_US, vendor_class_len);
+        while (*p) {
+          dhcp_option_byte(dhcp, *p++);
+        }
+      }
+    }
 
     dhcp_option_trailer(dhcp);
     /* shrink the pbuf to the actual content length */
@@ -886,6 +897,20 @@ dhcp_discover(struct netif *netif)
     dhcp_option_short(dhcp, DHCP_MAX_MSG_LEN(netif));
 
     dhcp_option(dhcp, DHCP_OPTION_PARAMETER_REQUEST_LIST, 4/*num options*/);
+// Espressif code
+
+    if (vendor_class_buf != NULL) {
+      const char *p = (const char*)vendor_class_buf;
+      if (vendor_class_len > 0) {
+        LWIP_ASSERT("DHCP: vendor_class_len is too long!", vendor_class_len < 255);
+        dhcp_option(dhcp, DHCP_OPTION_US, vendor_class_len);
+        while (*p) {
+          dhcp_option_byte(dhcp, *p++);
+        }
+      }
+    }
+
+    dhcp_option(dhcp, DHCP_OPTION_PARAMETER_REQUEST_LIST, 12/*num options*/);
     dhcp_option_byte(dhcp, DHCP_OPTION_SUBNET_MASK);
     dhcp_option_byte(dhcp, DHCP_OPTION_ROUTER);
     dhcp_option_byte(dhcp, DHCP_OPTION_BROADCAST);
@@ -1033,6 +1058,18 @@ dhcp_renew(struct netif *netif)
     dhcp_option(dhcp, DHCP_OPTION_MAX_MSG_SIZE, DHCP_OPTION_MAX_MSG_SIZE_LEN);
     dhcp_option_short(dhcp, DHCP_MAX_MSG_LEN(netif));
 
+// Espressif code
+    if (vendor_class_buf != NULL) {
+      const char *p = (const char*)vendor_class_buf;
+      if (vendor_class_len > 0) {
+        LWIP_ASSERT("DHCP: vendor_class_len is too long!", vendor_class_len < 255);
+        dhcp_option(dhcp, DHCP_OPTION_US, vendor_class_len);
+        while (*p) {
+          dhcp_option_byte(dhcp, *p++);
+        }
+      }
+    }
+
 #if 0
     dhcp_option(dhcp, DHCP_OPTION_REQUESTED_IP, 4);
     dhcp_option_long(dhcp, ntohl(dhcp->offered_ip_addr.addr));
@@ -1091,7 +1128,19 @@ dhcp_rebind(struct netif *netif)
     dhcp_option_hostname(dhcp, netif);
 #endif /* LWIP_NETIF_HOSTNAME */
 
-#if 0
+// Espressif code
+    if (vendor_class_buf != NULL) {
+      const char *p = (const char*)vendor_class_buf;
+      if (vendor_class_len > 0) {
+        LWIP_ASSERT("DHCP: vendor_class_len is too long!", vendor_class_len < 255);
+        dhcp_option(dhcp, DHCP_OPTION_US, vendor_class_len);
+        while (*p) {
+          dhcp_option_byte(dhcp, *p++);
+        }
+      }
+    }
+
+#if 1
     dhcp_option(dhcp, DHCP_OPTION_REQUESTED_IP, 4);
     dhcp_option_long(dhcp, ntohl(dhcp->offered_ip_addr.addr));
 
