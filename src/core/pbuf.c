@@ -78,6 +78,10 @@
 
 #include <string.h>
 
+// Espressif code
+#define EP_OFFSET 36
+void system_pp_recycle_rx_pkt(void *);
+
 #define SIZEOF_STRUCT_PBUF        LWIP_MEM_ALIGN_SIZE(sizeof(struct pbuf))
 /* Since the pool is created in memp, PBUF_POOL_BUFSIZE will be automatically
    aligned there. Therefore, PBUF_POOL_BUFSIZE_ALIGNED can be used here. */
@@ -236,6 +240,8 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
     LWIP_ASSERT("pbuf_alloc: bad pbuf layer", 0);
     return NULL;
   }
+  // Espressif code
+  offset += EP_OFFSET;
 
   switch (type) {
   case PBUF_POOL:
@@ -318,10 +324,14 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
     p->len = p->tot_len = length;
     p->next = NULL;
     p->type = type;
+// Espressif code
+    p->eb = NULL;
 
     LWIP_ASSERT("pbuf_alloc: pbuf->payload properly aligned",
            ((mem_ptr_t)p->payload % MEM_ALIGNMENT) == 0);
     break;
+// Espressif code
+  case PBUF_ESF_RX:
   /* pbuf references existing (non-volatile static constant) ROM payload? */
   case PBUF_ROM:
   /* pbuf references existing (externally allocated) RAM payload? */
@@ -395,6 +405,8 @@ pbuf_alloced_custom(pbuf_layer l, u16_t length, pbuf_type type, struct pbuf_cust
     LWIP_ASSERT("pbuf_alloced_custom: bad pbuf layer", 0);
     return NULL;
   }
+  // Espressif code
+  offset += EP_OFFSET;
 
   if (LWIP_MEM_ALIGN_SIZE(offset) + length > payload_mem_len) {
     LWIP_DEBUGF(PBUF_DEBUG | LWIP_DBG_LEVEL_WARNING, ("pbuf_alloced_custom(length=%"U16_F") buffer too short\n", length));
@@ -541,7 +553,8 @@ pbuf_header_impl(struct pbuf *p, s16_t header_size_increment, u8_t force)
     /* set new payload pointer */
     p->payload = (u8_t *)p->payload - header_size_increment;
     /* boundary check fails? */
-    if ((u8_t *)p->payload < (u8_t *)p + SIZEOF_STRUCT_PBUF) {
+// Espressif code
+    if ((u8_t *)p->payload < (u8_t *)p + SIZEOF_STRUCT_PBUF + EP_OFFSET) {
       LWIP_DEBUGF( PBUF_DEBUG | LWIP_DBG_LEVEL_SERIOUS,
         ("pbuf_header: failed as %p < %p (not enough space for new header size)\n",
         (void *)p->payload, (void *)(p + 1)));
@@ -667,7 +680,8 @@ pbuf_free(struct pbuf *p)
 
   LWIP_ASSERT("pbuf_free: sane type",
     p->type == PBUF_RAM || p->type == PBUF_ROM ||
-    p->type == PBUF_REF || p->type == PBUF_POOL);
+// Espressif code
+    p->type == PBUF_REF || p->type == PBUF_POOL || p->type == PBUF_ESF_RX);
 
   count = 0;
   /* de-allocate all consecutive pbufs from the head of the chain that
@@ -703,7 +717,9 @@ pbuf_free(struct pbuf *p)
         if (type == PBUF_POOL) {
           memp_free(MEMP_PBUF_POOL, p);
         /* is this a ROM or RAM referencing pbuf? */
-        } else if (type == PBUF_ROM || type == PBUF_REF) {
+// Espressif code
+        } else if (type == PBUF_ROM || type == PBUF_REF || type == PBUF_ESF_RX) {
+          system_pp_recycle_rx_pkt(p->eb);
           memp_free(MEMP_PBUF, p);
         /* type == PBUF_RAM */
         } else {
