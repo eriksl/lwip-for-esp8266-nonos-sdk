@@ -486,6 +486,8 @@ netif_set_default(struct netif *netif)
   if (netif == NULL) {
     /* remove default route */
     snmp_delete_iprteidx_tree(1, netif);
+// erik code
+	(void)0;
   } else {
     /* install default route */
     snmp_insert_iprteidx_tree(1, netif);
@@ -567,6 +569,11 @@ netif_issue_reports(struct netif* netif, u8_t report_type)
  */ 
 void netif_set_down(struct netif *netif)
 {
+// erik code
+  if (netif == NULL) {
+    return;
+  }
+
   if (netif->flags & NETIF_FLAG_UP) {
     netif->flags &= ~NETIF_FLAG_UP;
 #if LWIP_SNMP
