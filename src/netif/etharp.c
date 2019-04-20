@@ -726,6 +726,8 @@ etharp_arp_input(struct netif *netif, struct eth_addr *ethaddr, struct pbuf *p)
 #if LWIP_AUTOIP
   const u8_t * ethdst_hwaddr;
 #endif /* LWIP_AUTOIP */
+// Espressif code
+  struct pbuf *q;
 
   LWIP_ERROR("netif != NULL", (netif != NULL), return;);
 
@@ -834,8 +836,13 @@ etharp_arp_input(struct netif *netif, struct eth_addr *ethaddr, struct pbuf *p)
       /* hwtype, hwaddr_len, proto, protolen and the type in the ethernet header
          are already correct, we tested that before */
 
+// Espressif code
+      q = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
+      if (q != NULL)
+          pbuf_copy(q, p);
       /* return ARP reply */
-      netif->linkoutput(netif, p);
+      netif->linkoutput(netif, q);
+      pbuf_free(q);
     /* we are not configured? */
     } else if (ip4_addr_isany(&netif->ip_addr)) {
 // erik code
