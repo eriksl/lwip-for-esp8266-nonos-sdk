@@ -1239,10 +1239,50 @@ void
 tcp_rexmit_rto(struct tcp_pcb *pcb)
 {
   struct tcp_seg *seg;
+// Espressif code
+  struct tcp_seg *t0_head = NULL, *t0_tail = NULL; /* keep in unacked */
+// Espressif code
+  struct tcp_seg *t1_head = NULL, *t1_tail = NULL; /* link to unsent */
+// Espressif code
+  _Bool t0_1st = 1, t1_1st = 1;
 
   if (pcb->unacked == NULL) {
     return;
   }
+
+// Espressif code
+#if 1
+  seg = pcb->unacked;
+  while (seg != NULL) {
+	if (seg->p->eb) {
+		if (t0_1st) {
+			t0_head = t0_tail = seg;
+			t0_1st = 0;
+		} else {
+			t0_tail->next = seg;
+			t0_tail = seg;
+		}
+		seg = seg->next;
+		t0_tail->next = NULL;
+	} else {
+		if (t1_1st) {
+			t1_head = t1_tail = seg;
+			t1_1st = 0;
+		} else {
+			t1_tail->next = seg;
+			t1_tail = seg;
+		}
+		seg = seg->next;
+		t1_tail->next = NULL;
+	}
+  }
+  if (t1_head && t1_tail) {
+	t1_tail->next = pcb->unsent;
+	pcb->unsent = t1_head;
+  }
+  pcb->unacked = t0_head;
+
+#else
 
   /* Move all unacked segments to the head of the unsent queue */
   for (seg = pcb->unacked; seg->next != NULL; seg = seg->next);
@@ -1252,6 +1292,7 @@ tcp_rexmit_rto(struct tcp_pcb *pcb)
   pcb->unsent = pcb->unacked;
   /* unacked queue is now empty */
   pcb->unacked = NULL;
+#endif
   /* last unsent hasn't changed, no need to reset unsent_oversize */
 
   /* increment number of retransmissions */
