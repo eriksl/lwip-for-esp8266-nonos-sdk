@@ -79,6 +79,10 @@
 
 #include <string.h>
 
+// Espressif code
+#define EP_OFFSET 36
+void system_pp_recycle_rx_pkt(void *);
+
 #define SIZEOF_STRUCT_PBUF        LWIP_MEM_ALIGN_SIZE(sizeof(struct pbuf))
 /* Since the pool is created in memp, PBUF_POOL_BUFSIZE will be automatically
    aligned there. Therefore, PBUF_POOL_BUFSIZE_ALIGNED can be used here. */
@@ -212,25 +216,55 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
   LWIP_DEBUGF(PBUF_DEBUG | LWIP_DBG_TRACE, ("pbuf_alloc(length=%"U16_F")\n", length));
 
   /* determine header offset */
+// Espressif code
+  offset = 0;
   switch (layer) {
   case PBUF_TRANSPORT:
     /* add room for transport (often TCP) layer header */
-    offset = PBUF_LINK_HLEN + PBUF_IP_HLEN + PBUF_TRANSPORT_HLEN;
-    break;
+// Espressif code
+    offset += PBUF_TRANSPORT_HLEN;
 // erik code
 	__attribute__((fallthrough));
   case PBUF_IP:
     /* add room for IP layer header */
-    offset = PBUF_LINK_HLEN + PBUF_IP_HLEN;
-    break;
+// Espressif code
+    offset += PBUF_IP_HLEN;
 // erik code
 	__attribute__((fallthrough));
   case PBUF_LINK:
     /* add room for link layer header */
-    offset = PBUF_LINK_HLEN;
+// Espressif code
+    offset += PBUF_LINK_HLEN;
+
+// Espressif code
+    /*
+     * 1. LINK_HLEN 14Byte will be remove in WLAN layer
+     * 2. IEEE80211_HDR_MAX_LEN needs 40 bytes.
+     * 3. encryption needs exra 4 bytes ahead of actual data payload, and require
+     *     DAddr and SAddr to be 4-byte aligned.
+     * 4. TRANSPORT and IP are all 20, 4 bytes aligned, nice...
+     * 5. LCC add 6 bytes more, We don't consider WAPI yet...
+     * 6. define LWIP_MEM_ALIGN to be 4 Byte aligned, pbuf struct is 16B, Only thing may be
+     *     matter is ether_hdr is not 4B aligned.
+     *
+     * So, we need extra (40 + 4 - 14) = 30 and it's happen to be 4-Byte aligned
+     *
+     *    1. lwip
+     *         | empty 30B    | eth_hdr (14B)  | payload ...|
+     *              total: 44B ahead payload
+     *    2. net80211
+     *         | max 80211 hdr, 32B | ccmp/tkip iv (8B) | sec rsv(4B) | payload ...|
+     *              total: 40B ahead sec_rsv and 44B ahead payload
+     *
+     */
+    offset += EP_OFFSET; //remove LINK hdr in wlan
     break;
   case PBUF_RAW:
-    offset = 0;
+// Espressif code
+      /*
+       *   RAW pbuf suppose
+       */
+    offset += EP_OFFSET; //remove LINK hdr in wlan
     break;
   default:
     LWIP_ASSERT("pbuf_alloc: bad pbuf layer", 0);
@@ -318,10 +352,14 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
     p->len = p->tot_len = length;
     p->next = NULL;
     p->type = type;
+// Espressif code
+    p->eb = NULL;
 
     LWIP_ASSERT("pbuf_alloc: pbuf->payload properly aligned",
            ((mem_ptr_t)p->payload % MEM_ALIGNMENT) == 0);
     break;
+// Espressif code
+  case PBUF_ESF_RX:
   /* pbuf references existing (non-volatile static constant) ROM payload? */
   case PBUF_ROM:
   /* pbuf references existing (externally allocated) RAM payload? */
@@ -375,25 +413,28 @@ pbuf_alloced_custom(pbuf_layer l, u16_t length, pbuf_type type, struct pbuf_cust
   LWIP_DEBUGF(PBUF_DEBUG | LWIP_DBG_TRACE, ("pbuf_alloced_custom(length=%"U16_F")\n", length));
 
   /* determine header offset */
+// Espressif code
+  offset = 0;
   switch (l) {
   case PBUF_TRANSPORT:
     /* add room for transport (often TCP) layer header */
-    offset = PBUF_LINK_HLEN + PBUF_IP_HLEN + PBUF_TRANSPORT_HLEN;
-    break;
+// Espressif code
+    offset += PBUF_TRANSPORT_HLEN;
 // erik code
 	__attribute__((fallthrough));
   case PBUF_IP:
     /* add room for IP layer header */
-    offset = PBUF_LINK_HLEN + PBUF_IP_HLEN;
-    break;
+// Espressif code
+    offset += PBUF_IP_HLEN;
 // erik code
 	__attribute__((fallthrough));
   case PBUF_LINK:
     /* add room for link layer header */
-    offset = PBUF_LINK_HLEN;
+// Espressif code
+    offset += PBUF_LINK_HLEN;
     break;
   case PBUF_RAW:
-    offset = 0;
+// Espressif code
     break;
   default:
     LWIP_ASSERT("pbuf_alloced_custom: bad pbuf layer", 0);
@@ -554,7 +595,8 @@ pbuf_header(struct pbuf *p, s16_t header_size_increment)
     /* set new payload pointer */
     p->payload = (u8_t *)p->payload - header_size_increment;
     /* boundary check fails? */
-    if ((u8_t *)p->payload < (u8_t *)p + SIZEOF_STRUCT_PBUF) {
+// Espressif code
+    if ((u8_t *)p->payload < (u8_t *)p + SIZEOF_STRUCT_PBUF + EP_OFFSET) {
       LWIP_DEBUGF( PBUF_DEBUG | LWIP_DBG_LEVEL_SERIOUS,
         ("pbuf_header: failed as %p < %p (not enough space for new header size)\n",
         (void *)p->payload, (void *)(p + 1)));
@@ -642,7 +684,8 @@ pbuf_free(struct pbuf *p)
 
   LWIP_ASSERT("pbuf_free: sane type",
     p->type == PBUF_RAM || p->type == PBUF_ROM ||
-    p->type == PBUF_REF || p->type == PBUF_POOL);
+// Espressif code
+    p->type == PBUF_REF || p->type == PBUF_POOL || p->type == PBUF_ESF_RX);
 
   count = 0;
   /* de-allocate all consecutive pbufs from the head of the chain that
@@ -678,12 +721,17 @@ pbuf_free(struct pbuf *p)
         if (type == PBUF_POOL) {
           memp_free(MEMP_PBUF_POOL, p);
         /* is this a ROM or RAM referencing pbuf? */
-        } else if (type == PBUF_ROM || type == PBUF_REF) {
-          memp_free(MEMP_PBUF, p);
-        /* type == PBUF_RAM */
-        } else {
-          mem_free(p);
-        }
+// Espressif code
+        } else if (type == PBUF_ROM || type == PBUF_REF || type == PBUF_ESF_RX) {
+// Espressif code
+        system_pp_recycle_rx_pkt(p->eb);
+        memp_free(MEMP_PBUF, p);
+
+
+      /* type == PBUF_RAM */
+      } else {
+        mem_free(p);
+      }
       }
       count++;
       /* proceed to next pbuf */

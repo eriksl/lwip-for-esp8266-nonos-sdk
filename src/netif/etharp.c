@@ -695,6 +695,8 @@ etharp_arp_input(struct netif *netif, struct eth_addr *ethaddr, struct pbuf *p)
 #if LWIP_AUTOIP
   const u8_t * ethdst_hwaddr;
 #endif /* LWIP_AUTOIP */
+// Espressif code
+  struct pbuf *q;
 
   LWIP_ERROR("netif != NULL", (netif != NULL), return;);
 
@@ -802,9 +804,26 @@ etharp_arp_input(struct netif *netif, struct eth_addr *ethaddr, struct pbuf *p)
 
       /* hwtype, hwaddr_len, proto, protolen and the type in the ethernet header
          are already correct, we tested that before */
+// Espressif code
+#if 1
+      /*
+       *   don't do flip-flop here... do a copy here.
+       *    otherwise, we need to handle existing pbuf->eb in ieee80211_output.c
+       */
+
+      q = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
+      if (q != NULL)
+          pbuf_copy(q, p);
+      else
+          LWIP_ASSERT("q != NULL", q != NULL);
+
+      netif->linkoutput(netif, q);
+      pbuf_free(q);
+#else
 
       /* return ARP reply */
       netif->linkoutput(netif, p);
+#endif /* ESF_LWIP */
     /* we are not configured? */
     } else if (ip_addr_isany(&netif->ip_addr)) {
 // erik code
@@ -897,6 +916,8 @@ etharp_output(struct netif *netif, struct pbuf *q, ip_addr_t *ipaddr)
     return ERR_BUF;
   }
 
+  /* assume unresolved Ethernet address */
+  dest = NULL;
   /* Determine on destination hardware address. Broadcasts and multicasts
    * are special, other IP addresses are looked up in the ARP table. */
 
@@ -1114,19 +1135,33 @@ etharp_query(struct netif *netif, ip_addr_t *ipaddr, struct pbuf *q)
       /* allocate a new arp queue entry */
       new_entry = (struct etharp_q_entry *)memp_malloc(MEMP_ARP_QUEUE);
       if (new_entry != NULL) {
+// Espressif code
+        unsigned int qlen = 0;
         new_entry->next = 0;
         new_entry->p = p;
         if(arp_table[i].q != NULL) {
           /* queue was already existent, append the new entry to the end */
           struct etharp_q_entry *r;
           r = arp_table[i].q;
+// Espressif code
+          qlen++;
           while (r->next != NULL) {
             r = r->next;
+// Espressif code
+            qlen++;
           }
           r->next = new_entry;
         } else {
           /* queue did not exist, first item in queue */
           arp_table[i].q = new_entry;
+        }
+// Espressif code
+        if(qlen >= 3) {
+            struct etharp_q_entry *old;
+            old = arp_table[i].q;
+            arp_table[i].q = arp_table[i].q->next;
+            pbuf_free(old->p);
+            memp_free(MEMP_ARP_QUEUE, old);
         }
         LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_query: queued packet %p on ARP entry %"S16_F"\n", (void *)q, (s16_t)i));
         result = ERR_OK;

@@ -58,7 +58,10 @@ typedef enum {
   PBUF_RAM, /* pbuf data is stored in RAM */
   PBUF_ROM, /* pbuf data is stored in ROM */
   PBUF_REF, /* pbuf comes from the pbuf pool */
-  PBUF_POOL /* pbuf payload refers to RAM */
+// Espressif code
+  PBUF_POOL, /* pbuf payload refers to RAM */
+// Espressif code
+  PBUF_ESF_RX /* pbuf payload is from WLAN */
 } pbuf_type;
 
 
@@ -107,6 +110,8 @@ struct pbuf {
    * the stack itself, or pbuf->next pointers from a chain.
    */
   u16_t ref;
+// Espressif code
+  void * eb;
 };
 
 #if LWIP_SUPPORT_CUSTOM_PBUF

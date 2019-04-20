@@ -1455,10 +1455,16 @@ tcp_zero_window_probe(struct tcp_pcb *pcb)
     TCPH_FLAGS_SET(tcphdr, TCP_ACK | TCP_FIN);
   } else {
     /* Data segment, copy in one byte from the head of the unacked queue */
+// Espressif code
+//    struct tcp_hdr *thdr;
     char *d = ((char *)p->payload + TCP_HLEN);
     /* Depending on whether the segment has already been sent (unacked) or not
        (unsent), seg->p->payload points to the IP header or TCP header.
        Ensure we copy the first TCP data byte: */
+// Espressif code
+//    	thdr = (struct tcp_hdr *)((char*)seg->p->payload + offset);
+// Espressif code
+//    	pbuf_copy_partial(seg->p, d, 1, TCPH_HDRLEN(thdr) * 4 + offset);
     pbuf_copy_partial(seg->p, d, 1, seg->p->tot_len - seg->len);
   }
 
