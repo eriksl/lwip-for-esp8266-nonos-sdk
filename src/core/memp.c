@@ -337,11 +337,13 @@ memp_overflow_init(void)
     for (j = 0; j < memp_num[i]; ++j) {
 #if MEMP_SANITY_REGION_BEFORE_ALIGNED > 0
       m = (u8_t*)p + MEMP_SIZE - MEMP_SANITY_REGION_BEFORE_ALIGNED;
-      memset(m, 0xcd, MEMP_SANITY_REGION_BEFORE_ALIGNED);
+// erik code
+      MEMSET(m, 0xcd, MEMP_SANITY_REGION_BEFORE_ALIGNED);
 #endif
 #if MEMP_SANITY_REGION_AFTER_ALIGNED > 0
       m = (u8_t*)p + MEMP_SIZE + memp_sizes[i];
-      memset(m, 0xcd, MEMP_SANITY_REGION_AFTER_ALIGNED);
+// erik code
+      MEMSET(m, 0xcd, MEMP_SANITY_REGION_AFTER_ALIGNED);
 #endif
       p = (struct memp*)((u8_t*)p + MEMP_SIZE + memp_sizes[i] + MEMP_SANITY_REGION_AFTER_ALIGNED);
     }
