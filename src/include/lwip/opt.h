@@ -65,7 +65,7 @@
  * use lwIP facilities.
  */
 #ifndef NO_SYS
-#define NO_SYS                          0
+#define NO_SYS                          1
 #endif
 
 /**
@@ -131,7 +131,7 @@
  *    2 byte alignment -> #define MEM_ALIGNMENT 2
  */
 #ifndef MEM_ALIGNMENT
-#define MEM_ALIGNMENT                   1
+#define MEM_ALIGNMENT                   4
 #endif
 
 /**
@@ -1359,7 +1359,7 @@
  * @todo: TCP and IP-frag do not work with this, yet:
  */
 #ifndef LWIP_NETIF_TX_SINGLE_PBUF
-#define LWIP_NETIF_TX_SINGLE_PBUF             0
+#define LWIP_NETIF_TX_SINGLE_PBUF             1
 #endif /* LWIP_NETIF_TX_SINGLE_PBUF */
 
 /*
