@@ -1371,6 +1371,9 @@ etharp_request_dst(struct netif *netif, const ip4_addr_t *ipaddr, const struct e
 err_t
 etharp_request(struct netif *netif, const ip4_addr_t *ipaddr)
 {
+	if(!netif)
+		return(ERR_IF);
+
   LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_request: sending ARP request.\n"));
   return etharp_request_dst(netif, ipaddr, &ethbroadcast);
 }
