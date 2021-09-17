@@ -40,6 +40,7 @@
 #include "lwip/netif.h"
 #include "lwip/ip_addr.h"
 #include "lwip/ip.h"
+#include "lwip/ip6_addr.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -87,6 +88,26 @@ struct udp_pcb;
 typedef void (*udp_recv_fn)(void *arg, struct udp_pcb *pcb, struct pbuf *p,
     ip_addr_t *addr, u16_t port);
 
+#if LWIP_IPV6
+/** Function prototype for udp pcb IPv6 receive callback functions
+ * The callback is responsible for freeing the pbuf
+ * if it's not used any more.
+ *
+ * @param arg user supplied argument (udp_pcb.recv_arg)
+ * @param pcb the udp_pcb which received data
+ * @param p the packet buffer that was received
+ * @param addr the remote IPv6 address from which the packet was received
+ * @param port the remote port from which the packet was received
+ */
+typedef void (*udp_recv_ip6_fn)(void *arg, struct udp_pcb *pcb, struct pbuf *p,
+    ip6_addr_t *addr, u16_t port);
+#endif /* LWIP_IPV6 */
+
+#if LWIP_IPV6
+#define UDP_PCB_RECV_IP6  udp_recv_ip6_fn ip6;
+#else
+#define UDP_PCB_RECV_IP6
+#endif /* LWIP_IPV6 */
 
 struct udp_pcb {
 /* Common members of all PCB types */
@@ -111,7 +132,10 @@ struct udp_pcb {
 #endif /* LWIP_UDPLITE */
 
   /** receive callback function */
-  udp_recv_fn recv;
+  union {
+    udp_recv_fn ip4;
+    UDP_PCB_RECV_IP6
+  }recv;
   /** user-supplied argument for the recv callback */
   void *recv_arg;  
 };

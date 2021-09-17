@@ -97,23 +97,6 @@ static void ipcp_script (fsm *, char *); /* Run an up/down script */
 #endif
 static void ipcp_finished (fsm *);                    /* Don't need lower layer */
 
-static const fsm_callbacks ipcp_callbacks = { /* IPCP callback routines */
-    ipcp_resetci,		/* Reset our Configuration Information */
-    ipcp_cilen,			/* Length of our Configuration Information */
-    ipcp_addci,			/* Add our Configuration Information */
-    ipcp_ackci,			/* ACK our Configuration Information */
-    ipcp_nakci,			/* NAK our Configuration Information */
-    ipcp_rejci,			/* Reject our Configuration Information */
-    ipcp_reqci,			/* Request peer's Configuration Information */
-    ipcp_up,			/* Called when fsm reaches OPENED state */
-    ipcp_down,			/* Called when fsm leaves OPENED state */
-    NULL,			/* Called when we want the lower layer up */
-    ipcp_finished,		/* Called when we want the lower layer down */
-    NULL,			/* Called when Protocol-Reject received */
-    NULL,			/* Retransmission is necessary */
-    NULL,			/* Called to handle protocol-specific codes */
-    "IPCP"			/* String name of protocol */
-};
 
 fsm ipcp_fsm[NUM_PPP]; /* IPCP fsm structure */
 
@@ -148,32 +131,26 @@ static void ipcp_input (int, u_char *, int);
 static void ipcp_protrej (int);
 
 
-const struct protent ipcp_protent = {
-    PPP_IPCP,
-    ipcp_init,
-    ipcp_input,
-    ipcp_protrej,
-    ipcp_lowerup,
-    ipcp_lowerdown,
-    ipcp_open,
-    ipcp_close,
-#if PRINTPKT_SUPPORT
-    ipcp_printpkt,
-#endif /* PRINTPKT_SUPPORT */
-    NULL,
-    1,
-#if PRINTPKT_SUPPORT
-    "IPCP",
-    "IP",
-#endif /* PRINTPKT_SUPPORT */
-#if PPP_OPTIONS
-    ipcp_option_list,
-    ip_check_options,
-#endif /* PPP_OPTIONS */
-#if DEMAND_SUPPORT
-    ip_demand_conf,
-    ip_active_pkt
-#endif /* DEMAND_SUPPORT */
+struct protent ipcp_protent = {
+  PPP_IPCP,
+  ipcp_init,
+  ipcp_input,
+  ipcp_protrej,
+  ipcp_lowerup,
+  ipcp_lowerdown,
+  ipcp_open,
+  ipcp_close,
+#if PPP_ADDITIONAL_CALLBACKS
+  ipcp_printpkt,
+  NULL,
+#endif /* PPP_ADDITIONAL_CALLBACKS */
+  1,
+  "IPCP",
+#if PPP_ADDITIONAL_CALLBACKS
+  ip_check_options,
+  NULL,
+  ip_active_pkt
+#endif /* PPP_ADDITIONAL_CALLBACKS */
 };
 
 static void ipcp_clear_addrs (int);

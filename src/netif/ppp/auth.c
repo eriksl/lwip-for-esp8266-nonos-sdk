@@ -425,15 +425,9 @@ link_down(int unit)
     if (protp->protocol < 0xC000 && protp->close != NULL) {
       (*protp->close)(unit, "LCP down");
     }
-    /* XXX if doing_multilink, should do something to stop
-       network-layer traffic on the link */
-
-    ppp_link_down(pcb);
-}
-
-void upper_layers_down(ppp_pcb *pcb) {
-    int i;
-    const struct protent *protp;
+  }
+  num_np_open = 0;  /* number of network protocols we have opened */
+  num_np_up = 0;    /* Number of network protocols which have come up */
 
   if (lcp_phase[unit] != PHASE_DEAD) {
     lcp_phase[unit] = PHASE_TERMINATE;
@@ -445,19 +439,28 @@ void upper_layers_down(ppp_pcb *pcb) {
  * The link is established.
  * Proceed to the Dead, Authenticate or Network phase as appropriate.
  */
-void link_established(ppp_pcb *pcb) {
-    int auth;
-#if PPP_SERVER
-    lcp_options *wo = &pcb->lcp_wantoptions;
-    lcp_options *go = &pcb->lcp_gotoptions;
-#endif /* PPP_SERVER */
-    lcp_options *ho = &pcb->lcp_hisoptions;
-    int i;
-    const struct protent *protp;
-#if PPP_SERVER
-    int errcode;
-#endif /* PPP_SERVER */
+void
+link_established(int unit)
+{
+  int auth;
+  int i;
+  struct protent *protp;
+  lcp_options *wo = &lcp_wantoptions[unit];
+  lcp_options *go = &lcp_gotoptions[unit];
+#if PAP_SUPPORT || CHAP_SUPPORT
+  lcp_options *ho = &lcp_hisoptions[unit];
+#endif /* PAP_SUPPORT || CHAP_SUPPORT */
 
+  AUTHDEBUG(LOG_INFO, ("link_established: unit %d; Lowering up all protocols...\n", unit));
+  /*
+   * Tell higher-level protocols that LCP is up.
+   */
+  for (i = 0; (protp = ppp_protocols[i]) != NULL; ++i) {
+    if (protp->protocol != PPP_LCP && protp->enabled_flag && protp->lowerup != NULL) {
+      (*protp->lowerup)(unit);
+    }
+  }
+  if (ppp_settings.auth_required && !(go->neg_chap || go->neg_upap)) {
     /*
      * We wanted the peer to authenticate itself, and it refused:
      * treat it as though it authenticated with PAP using a username
@@ -470,58 +473,8 @@ void link_established(ppp_pcb *pcb) {
     }
   }
 
-#if PPP_SERVER
-#if PPP_ALLOWED_ADDRS
-    if (!auth_required && noauth_addrs != NULL)
-	set_allowed_addrs(unit, NULL, NULL);
-#endif /* PPP_ALLOWED_ADDRS */
-
-    if (pcb->settings.auth_required && !(0
-#if PAP_SUPPORT
-	|| go->neg_upap
-#endif /* PAP_SUPPORT */
-#if CHAP_SUPPORT
-	|| go->neg_chap
-#endif /* CHAP_SUPPORT */
-#if EAP_SUPPORT
-	|| go->neg_eap
-#endif /* EAP_SUPPORT */
-	)) {
-
-#if PPP_ALLOWED_ADDRS
-	/*
-	 * We wanted the peer to authenticate itself, and it refused:
-	 * if we have some address(es) it can use without auth, fine,
-	 * otherwise treat it as though it authenticated with PAP using
-	 * a username of "" and a password of "".  If that's not OK,
-	 * boot it out.
-	 */
-	if (noauth_addrs != NULL) {
-	    set_allowed_addrs(unit, NULL, NULL);
-	} else
-#endif /* PPP_ALLOWED_ADDRS */
-	if (!wo->neg_upap || !pcb->settings.null_login) {
-	    ppp_warn("peer refused to authenticate: terminating link");
-#if 0 /* UNUSED */
-	    status = EXIT_PEER_AUTH_FAILED;
-#endif /* UNUSED */
-	    errcode = PPPERR_AUTHFAIL;
-	    ppp_ioctl(pcb, PPPCTLS_ERRCODE, &errcode);
-	    lcp_close(pcb, "peer refused to authenticate");
-	    return;
-	}
-    }
-#endif /* PPP_SERVER */
-
-    new_phase(pcb, PHASE_AUTHENTICATE);
-    auth = 0;
-#if PPP_SERVER
-#if EAP_SUPPORT
-    if (go->neg_eap) {
-	eap_authpeer(pcb, pcb->settings.our_name);
-	auth |= EAP_PEER;
-    } else
-#endif /* EAP_SUPPORT */
+  lcp_phase[unit] = PHASE_AUTHENTICATE;
+  auth = 0;
 #if CHAP_SUPPORT
   if (go->neg_chap) {
     ChapAuthPeer(unit, ppp_settings.our_name, go->chap_mdtype);
@@ -584,115 +537,25 @@ network_phase(int unit)
   }
 
 #if CBCP_SUPPORT
-    /*
-     * If we negotiated callback, do it now.
-     */
-    if (go->neg_cbcp) {
-	new_phase(pcb, PHASE_CALLBACK);
-	(*cbcp_protent.open)(pcb);
-	return;
+  /*
+   * If we negotiated callback, do it now.
+   */
+  if (go->neg_cbcp) {
+    lcp_phase[unit] = PHASE_CALLBACK;
+    (*cbcp_protent.open)(unit);
+    return;
+  }
+#endif /* CBCP_SUPPORT */
+
+  lcp_phase[unit] = PHASE_NETWORK;
+  for (i = 0; (protp = ppp_protocols[i]) != NULL; ++i) {
+    if (protp->protocol < 0xC000 && protp->enabled_flag && protp->open != NULL) {
+      (*protp->open)(unit);
+      if (protp->protocol != PPP_CCP) {
+        ++num_np_open;
+      }
     }
-#endif
-
-#if PPP_OPTIONS
-    /*
-     * Process extra options from the secrets file
-     */
-    if (extra_options) {
-	options_from_list(extra_options, 1);
-	free_wordlist(extra_options);
-	extra_options = 0;
-    }
-#endif /* PPP_OPTIONS */
-    start_networks(pcb);
-}
-
-void start_networks(ppp_pcb *pcb) {
-#if CCP_SUPPORT || ECP_SUPPORT
-    int i;
-    const struct protent *protp;
-#endif /* CCP_SUPPORT || ECP_SUPPORT */
-#if ECP_SUPPORT
-    int ecp_required;
-#endif /* ECP_SUPPORT */
-#ifdef MPPE
-    int mppe_required;
-#endif /* MPPE */
-
-    new_phase(pcb, PHASE_NETWORK);
-
-#ifdef HAVE_MULTILINK
-    if (multilink) {
-	if (mp_join_bundle()) {
-	    if (multilink_join_hook)
-		(*multilink_join_hook)();
-	    if (updetach && !nodetach)
-		detach();
-	    return;
-	}
-    }
-#endif /* HAVE_MULTILINK */
-
-#ifdef PPP_FILTER
-    if (!demand)
-	set_filters(&pass_filter, &active_filter);
-#endif
-#if CCP_SUPPORT || ECP_SUPPORT
-    /* Start CCP and ECP */
-    for (i = 0; (protp = protocols[i]) != NULL; ++i)
-	if (
-	    (0
-#if ECP_SUPPORT
-	    || protp->protocol == PPP_ECP
-#endif /* ECP_SUPPORT */
-#if CCP_SUPPORT
-	    || protp->protocol == PPP_CCP
-#endif /* CCP_SUPPORT */
-	    )
-	    && protp->enabled_flag && protp->open != NULL)
-	    (*protp->open)(pcb);
-#endif /* CCP_SUPPORT || ECP_SUPPORT */
-
-    /*
-     * Bring up other network protocols iff encryption is not required.
-     */
-#if ECP_SUPPORT
-    ecp_required = ecp_gotoptions[unit].required;
-#endif /* ECP_SUPPORT */
-#ifdef MPPE
-    mppe_required = ccp_gotoptions[unit].mppe;
-#endif /* MPPE */
-
-    if (1
-#if ECP_SUPPORT
-        && !ecp_required
-#endif /* ECP_SUPPORT */
-#ifdef MPPE
-        && !mppe_required
-#endif /* MPPE */
-        )
-	continue_networks(pcb);
-}
-
-void continue_networks(ppp_pcb *pcb) {
-    int i;
-    const struct protent *protp;
-
-    /*
-     * Start the "real" network protocols.
-     */
-    for (i = 0; (protp = protocols[i]) != NULL; ++i)
-	if (protp->protocol < 0xC000
-#if CCP_SUPPORT
-	    && protp->protocol != PPP_CCP
-#endif /* CCP_SUPPORT */
-#if ECP_SUPPORT
-	    && protp->protocol != PPP_ECP
-#endif /* ECP_SUPPORT */
-	    && protp->enabled_flag && protp->open != NULL) {
-	    (*protp->open)(pcb);
-	    ++pcb->num_np_open;
-	}
+  }
 
   if (num_np_open == 0) {
     /* nothing to do */
@@ -704,16 +567,16 @@ void continue_networks(ppp_pcb *pcb) {
 /*
  * The peer has failed to authenticate himself using `protocol'.
  */
-void auth_peer_fail(ppp_pcb *pcb, int protocol) {
-    int errcode = PPPERR_AUTHFAIL;
-    /*
-     * Authentication failure: take the link down
-     */
-#if 0 /* UNUSED */
-    status = EXIT_PEER_AUTH_FAILED;
-#endif /* UNUSED */
-    ppp_ioctl(pcb, PPPCTLS_ERRCODE, &errcode);
-    lcp_close(pcb, "Authentication failed");
+void
+auth_peer_fail(int unit, u16_t protocol)
+{
+  LWIP_UNUSED_ARG(protocol);
+
+  AUTHDEBUG(LOG_INFO, ("auth_peer_fail: %d proto=%X\n", unit, protocol));
+  /*
+   * Authentication failure: take the link down
+   */
+  lcp_close(unit, "Authentication failed");
 }
 
 
@@ -739,12 +602,22 @@ auth_peer_success(int unit, u16_t protocol, char *name, int namelen)
       return;
   }
 
-    /*
-     * If there is no more authentication still to be done,
-     * proceed to the network (or callback) phase.
-     */
-    if ((pcb->auth_pending &= ~bit) == 0)
-        network_phase(pcb);
+  /*
+   * Save the authenticated name of the peer for later.
+   */
+  if (namelen > (int)sizeof(peer_authname) - 1) {
+    namelen = sizeof(peer_authname) - 1;
+  }
+  BCOPY(name, peer_authname, namelen);
+  peer_authname[namelen] = 0;
+  
+  /*
+   * If there is no more authentication still to be done,
+   * proceed to the network (or callback) phase.
+   */
+  if ((auth_pending[unit] &= ~pbit) == 0) {
+    network_phase(unit);
+  }
 }
 
 /*
