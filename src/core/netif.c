@@ -210,7 +210,7 @@ netif_add(struct netif *netif,
   /* IPv6 address autoconfiguration not enabled by default */
   netif->ip6_autoconfig_enabled = 0;
 #endif /* LWIP_IPV6_AUTOCONFIG */
-#if LWIP_IPV6_SEND_ROUTER_SOLICIT
+#if LWIP_IPV6 && LWIP_IPV6_SEND_ROUTER_SOLICIT
   netif->rs_count = LWIP_ND6_MAX_MULTICAST_SOLICIT;
 #endif /* LWIP_IPV6_SEND_ROUTER_SOLICIT */
 #if LWIP_IPV6_DHCP6
@@ -564,7 +564,7 @@ netif_issue_reports(struct netif* netif, u8_t report_type)
     /* send mld memberships */
     mld6_report_groups(netif);
 #endif /* LWIP_IPV6_MLD */
-#if LWIP_IPV6_SEND_ROUTER_SOLICIT
+#if LWIP_IPV6 && LWIP_IPV6_SEND_ROUTER_SOLICIT
     /* Send Router Solicitation messages. */
     netif->rs_count = LWIP_ND6_MAX_MULTICAST_SOLICIT;
 #endif /* LWIP_IPV6_SEND_ROUTER_SOLICIT */
