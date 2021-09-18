@@ -216,7 +216,7 @@ struct netif {
   /** is this netif enabled for IPv6 autoconfiguration */
   u8_t ip6_autoconfig_enabled;
 #endif /* LWIP_IPV6_AUTOCONFIG */
-#if LWIP_IPV6_SEND_ROUTER_SOLICIT
+#if LWIP_IPV6 && LWIP_IPV6_SEND_ROUTER_SOLICIT
   /** Number of Router Solicitation messages that remain to be sent. */
   u8_t rs_count;
 #endif /* LWIP_IPV6_SEND_ROUTER_SOLICIT */
