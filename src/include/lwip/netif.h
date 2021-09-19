@@ -213,6 +213,8 @@ struct netif {
   /** the DHCP client state information for this netif */
   struct dhcp *dhcp;
 // Espressif code
+  struct udp_pcb *dhcps_pcb;
+// Espressif code
   dhcp_event_fn dhcp_event;
 #endif /* LWIP_DHCP */
 #if LWIP_AUTOIP
