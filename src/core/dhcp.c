@@ -203,6 +203,8 @@ static void dhcp_option_hostname(struct dhcp *dhcp, struct netif *netif);
 /* always add the DHCP options trailer to end and pad */
 static void dhcp_option_trailer(struct dhcp *dhcp);
 
+// Espressif code
+void system_station_got_ip_set(const ip_addr_t *ip, const ip_addr_t *mask, const ip_addr_t *gw);
 /**
  * Back-off the DHCP client (because of a received NAK response).
  *
@@ -396,6 +398,14 @@ dhcp_fine_tmr(void)
     /* only act on DHCP configured interfaces */
     if (netif->dhcp != NULL) {
       /* timer is active (non zero), and is about to trigger now */      
+// Espressif code
+      if (DHCP_MAXRTX != 0 && netif->dhcp->state != DHCP_RENEWING) {
+    	  if (netif->dhcp->tries >= DHCP_MAXRTX){
+			  if (netif->dhcp_event != NULL)
+				  netif->dhcp_event();
+			  break;
+		  }
+      }
       if (netif->dhcp->request_timeout > 1) {
         netif->dhcp->request_timeout--;
       }
@@ -1034,6 +1044,12 @@ dhcp_bind(struct netif *netif)
   }
 #endif /* LWIP_DHCP_AUTOIP_COOP */
 
+// Espressif code
+  ip_addr_t ip, mask, gw;
+  ip = netif->ip_addr;
+  mask = netif->netmask;
+  gw = netif->gw;
+
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_STATE, ("dhcp_bind(): IP: 0x%08"X32_F"\n",
     ip4_addr_get_u32(&dhcp->offered_ip_addr)));
   netif_set_ipaddr(netif, &dhcp->offered_ip_addr);
@@ -1045,6 +1061,9 @@ dhcp_bind(struct netif *netif)
   netif_set_gw(netif, &gw_addr);
   /* bring the interface up */
   netif_set_up(netif);
+
+// Espressif code
+  system_station_got_ip_set(&ip, &mask, &gw);
   /* netif is now bound to DHCP leased address */
   dhcp_set_state(dhcp, DHCP_BOUND);
 }
