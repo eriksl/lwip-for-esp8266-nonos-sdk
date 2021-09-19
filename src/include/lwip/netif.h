@@ -154,6 +154,8 @@ typedef err_t (*netif_mld_mac_filter_fn)(struct netif *netif,
        const ip6_addr_t *group, u8_t action);
 #endif /* LWIP_IPV6 && LWIP_IPV6_MLD */
 
+// Espressif code
+typedef void (*dhcp_event_fn)(void);
 /** Generic data structure used for all lwIP network interfaces.
  *  The following fields should be filled in by the initialization
  *  function for the device driver: hwaddr_len, hwaddr[], mtu, flags */
@@ -210,6 +212,8 @@ struct netif {
 #if LWIP_DHCP
   /** the DHCP client state information for this netif */
   struct dhcp *dhcp;
+// Espressif code
+  dhcp_event_fn dhcp_event;
 #endif /* LWIP_DHCP */
 #if LWIP_AUTOIP
   /** the AutoIP client state information for this netif */
