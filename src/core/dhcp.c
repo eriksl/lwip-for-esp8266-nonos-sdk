@@ -668,6 +668,9 @@ dhcp_start(struct netif *netif)
   struct dhcp *dhcp;
   err_t result;
 
+  if(!netif_is_up(netif))
+	  netif_set_up(netif);
+
   LWIP_ERROR("netif != NULL", (netif != NULL), return ERR_ARG;);
   LWIP_ERROR("netif is not up, old style port?", netif_is_up(netif), return ERR_ARG;);
   dhcp = netif->dhcp;
